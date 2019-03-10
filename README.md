@@ -1,5 +1,5 @@
 # Flo-Whatsapp
-This is a peer-peer chat app using tor onion service as a peer.Every user has got his own onion service and an id(Flo Id) which authenticates the user to use the webapp.The website is hosted on mongoose server at port 8000 which can be changed later.
+This is a peer-peer Whatsapp like chat app using tor onion service as a peer.Every user has got his own onion service and an id(Flo Id) which authenticates the user to use the webapp.The website is hosted on mongoose web server at port 8000 
 
 ## Requirements
 1. Brave Browser
