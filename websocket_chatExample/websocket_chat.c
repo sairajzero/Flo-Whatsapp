@@ -35,8 +35,8 @@ static void broadcast(struct mg_connection *nc, const struct mg_str msg) {
 
 void unicast(struct mg_connection *nc, const struct mg_str msg) {
   struct mg_connection *c;
-  char tmp[5000];
-  char buf[5000];
+  char tmp[25000];
+  char buf[25000];
   char addr[32];
   char *recipient;
   char *actual_msg;
