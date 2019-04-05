@@ -49,7 +49,7 @@ void unicast(struct mg_connection *nc, const struct mg_str msg) {
   recipient = strtok(tmp," ");
   actual_msg = strtok(NULL,"\0");
   printf("%s<%s\n",recipient,actual_msg);
-  snprintf(buf, sizeof(buf), "%s:%.*s", nc->floID,(int)strlen(actual_msg), actual_msg);
+  snprintf(buf, sizeof(buf), "%s:%s ->%s",addr, nc->floID,actual_msg);
   printf("%s<-%s\n",recipient, buf); /* Local echo. */
   for (c = mg_next(nc->mgr, NULL); c != NULL; c = mg_next(nc->mgr, c)) {
     if (!strcmp(c->floID,recipient))  /* Send to receiver */
