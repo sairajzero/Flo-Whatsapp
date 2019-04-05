@@ -45,10 +45,8 @@ void unicast(struct mg_connection *nc, const struct mg_str msg) {
 
   //strcpy(tmp,msg.p);
   snprintf(tmp, sizeof(tmp), "%.*s",(int)msg.len, msg.p);
-  printf("%s",tmp);
   recipient = strtok(tmp," ");
   actual_msg = strtok(NULL,"\0");
-  printf("%s<%s\n",recipient,actual_msg);
   snprintf(buf, sizeof(buf), "%s:%s : %s",addr, nc->floID,actual_msg);
   printf("%s<-%s\n",recipient, buf); /* Local echo. */
   for (c = mg_next(nc->mgr, NULL); c != NULL; c = mg_next(nc->mgr, c)) {
@@ -61,7 +59,7 @@ static void ev_handler(struct mg_connection *nc, int ev, void *ev_data) {
   switch (ev) {
     case MG_EV_WEBSOCKET_HANDSHAKE_DONE: {
       /* New websocket connection. Tell everybody. */
-      //broadcast(nc, mg_mk_str("++ joined"));
+      broadcast(nc, mg_mk_str("++ joined"));
       break;
     }
     case MG_EV_WEBSOCKET_FRAME: {
@@ -69,7 +67,8 @@ static void ev_handler(struct mg_connection *nc, int ev, void *ev_data) {
       /* New websocket message. Tell everybody. */
       struct mg_str d = {(char *) wm->data, wm->size};
       if (d.p[0] == '$'){
-        strcpy(nc->floID,&d.p[1]);
+        snprintf(nc->floID, sizeof(nc->floID), "%.*s",(int)d.len-1, &d.p[1]);
+        broadcast(nc, mg_mk_str(nc->floID));
       }
       else{
         unicast(nc, d);
@@ -83,7 +82,7 @@ static void ev_handler(struct mg_connection *nc, int ev, void *ev_data) {
     case MG_EV_CLOSE: {
       /* Disconnect. Tell everybody. */
       if (is_websocket(nc)) {
-        //broadcast(nc, mg_mk_str("-- left"));
+        broadcast(nc, mg_mk_str("-- left"));
       }
       break;
     }
