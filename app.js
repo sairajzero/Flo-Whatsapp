@@ -7,7 +7,9 @@ if (!window.indexedDB) {
      window.alert("Your browser doesn't support a stable version of IndexedDB.")
 }
 
-contacts = []
+var contacts = [];
+var receiverID,senderID;
+var selfwebsocket;
 
 function convertStringToInt(string){
   return parseInt(string,10);
@@ -15,11 +17,33 @@ function convertStringToInt(string){
 
 function userDataStartUp(){
     console.log("StartUp");
-    getDatafromAPI().then(function (res) {
-      console.log(res);
+    getDatafromAPI().then(function (result) {
+      console.log(result);
+      getuserID().then(function(result){
+        console.log(result);
+        getDatafromIDB().then(function(result){
+          contacts = arrayToObject(result);
+          console.log(contacts);
+          displayContacts();
+          initselfWebSocket();
+          //startChats();
+        }).catch(function (error) {
+        console.log(error.message);
+        });
+      }).catch(function (error) {
+        console.log(error.message);
+      });
     }).catch(function (error) {
         console.log(error.message);
     });
+
+    function arrayToObject(array){
+      obj = {};
+      array.forEach(element => {
+        obj[element.floID] = {onionAddr : element.onionAddr, name : element.name};
+      });
+      return obj;
+    }
 
     function storedata(data){
       return new Promise(
@@ -114,34 +138,9 @@ function userDataStartUp(){
               }
             );
           }
-    function getDataFromIDB(){
-    return new Promise(
-    function(resolve, reject) {
-        var idb = indexedDB.open("FLO_chat");
-         idb.onerror = function(event) {
-             console.log("Error in opening IndexedDB!");
-         };
-         idb.onsuccess = function(event) {
-           var db = event.target.result;
-           var obs = db.transaction('contacts', "readwrite").objectStore('contacts');
-           appdetails = [];
-           var cursorRequest = obs.openCursor();
-           cursorRequest.onsuccess = function(event) {
-             var cursor = event.target.result;
-             if(cursor) {
-               appdetails.push(cursor.value);
-               cursor.continue();
-             }else {
-               resolve(appdetails);
-             }
-           };
-           db.close();
-         };
-       }
-     );
-    }
 
-    }
+
+}
 userDataStartUp();
 
 function getuserID(){
@@ -163,15 +162,17 @@ function getuserID(){
                       while(!validateAddr(userID)){
                           userID = prompt("Retry!Enter A Valid Flo ID!");
                         }
-                        console.log(window.location.host);
+                        
                         var obs2 = db.transaction('contacts', "readwrite").objectStore('contacts');
                         var getReq2 = obs2.get(userID);
                         getReq2.onsuccess = function(event){
-                          var onionAddr = event.target.result;
-                          if(onionAddr === window.location.host)
-                            res(userID);
-                          else if(onionAddr === undefined)
+                          var data = event.target.result;
+                          console.log(window.location.host);
+                          //console.log(data.onionAddr);
+                          if(data === undefined)
                             var reg = confirm('FLO ID is not registers to FLO chat!\nRegister FLO ID?');
+                          else if(data.onionAddr == window.location.host)
+                            res(userID);
                           else
                             var reg = confirm('FLO ID is registered to another onion!\nChange FLO ID to this onion?');
                           if(reg)
@@ -180,18 +181,143 @@ function getuserID(){
                           rej('Unable to register userID!\nTry again later!');
                         }
                   }
+                  else
+                    res(userID);
                 }
               }).then(function(result){
                 console.log(result);
                 var obs = db.transaction('lastTx', "readwrite").objectStore('lastTx');
+                senderID = result;
                 obs.put(result,'userID');
                 db.close();
+                resolve('userID Initiated')
               }).catch(function(error){
-                console.log(error);
                 db.close();
+                console.log(error.message);
+                reject('userID Initiation Failed');
               });   
       };
     }
   );
 }
-getuserID();
+
+function getDatafromIDB(){
+  return new Promise(
+    function(resolve,reject){
+      var idb = indexedDB.open("FLO_Chat");
+      idb.onerror = function(event) {
+         reject("Error in opening IndexedDB!");
+      };
+      idb.onsuccess = function(event) {
+        var db = event.target.result;
+        var obs = db.transaction("contacts", "readwrite").objectStore("contacts");
+        var getReq = obs.getAll();
+        getReq.onsuccess = function(event){
+          resolve(event.target.result);
+        }
+        getReq.onerror = function(event){
+          reject('Unable to read contacts!')
+        }
+        db.close();
+      };
+    }
+  );
+}
+
+function displayContacts(){
+  console.log('displayContacts');
+  var listElement = document.getElementById('contact-display');
+  for(floID in contacts){
+    var createLi = document.createElement('div');
+    createLi.setAttribute("id", floID);
+    createLi.setAttribute("onClick", 'changeReceiver(this)');
+    createLi.setAttribute("class", "row sideBar-body");
+    createLi.innerHTML = `<div class="col-sm-11 col-xs-11 sideBar-main">
+                <div class="row">
+                  <div class="col-sm-8 col-xs-8 sideBar-name">
+                    <span class="name-meta">${floID}
+                  </span>
+                  </div>
+                  <div class="col-sm-4 col-xs-4 pull-right sideBar-time">
+                    <span class="time-meta pull-right">${contacts[floID].name}
+                  </span>
+                  </div>
+                </div>
+              </div>`
+    listElement.appendChild(createLi);
+  }
+}
+
+function initselfWebSocket(){
+  var selfwebsocket = new WebSocket("ws://"+location.host+"/ws");
+  selfwebsocket.onopen = function(evt){ 
+    console.log("CONNECTED");
+    selfwebsocket.send(senderID);
+  };
+  selfwebsocket.onclose = function(evt){ 
+    console.log("DISCONNECTED");
+  };
+  selfwebsocket.onmessage = function(evt){ 
+    console.log(evt.data); 
+    try{
+      var disp = document.getElementById("conversation");
+      var data = JSON.parse(evt.data);
+      var msgdiv = document.createElement('div');
+      msgdiv.setAttribute("class", "row message-body");
+      msgdiv.innerHTML = `<div class="col-sm-12 message-main-receiver">
+              <div class="receiver">
+                <span class="message-text">
+                 <b>${data.from} : </b><br/>${data.msg}
+                </span>
+                <span class="message-time pull-right">
+                  Time
+                </span>
+              </div>
+            </div>
+      `;
+      disp.appendChild(msgdiv);
+    }catch(err){
+      console.log(err);
+    }
+  };
+  selfwebsocket.onerror = function(evt){ 
+    console.log(evt); 
+  };
+}
+
+function changeReceiver(param){
+  console.log(param.id);
+  receiverID = param.id;
+  document.getElementById('recipient-floID').innerHTML = receiverID;
+}
+
+function sendMsg(){
+  var msg = document.getElementById('sendMsgInput').value;
+  console.log(msg);
+  var ws = new WebSocket("ws://"+contacts[receiverID].onionAddr+"/ws");
+  ws.onopen = function(evt){
+      var data = {from:senderID,msg:msg};
+      data = JSON.stringify(data);
+      ws.send(data);
+      console.log(`sentMsg : ${data}`);
+      var disp = document.getElementById("conversation");
+      var msgdiv = document.createElement('div');
+      msgdiv.setAttribute("class", "row message-body");
+      msgdiv.innerHTML = `<div class="col-sm-12 message-main-sender">
+              <div class="sender">
+                <span class="message-text"><b>${receiverID} : </b><br/>${msg}
+                </span>
+                <span class="message-time pull-right">
+                  Time
+                </span>
+              </div>
+            </div>`;
+      disp.appendChild(msgdiv);
+      //send_check = 1;
+      //recursion_called = 0;
+      //addSentChat(msg.substring(2+msgArray[0].length+msgArray[1].length),timer,msgArray[0]);
+      //addTick(message);
+    }
+  ws.onerror = function(ev) { console.log(ev); };
+  ws.onclose = function(ev) { console.log(ev); };
+}
