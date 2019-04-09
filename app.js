@@ -252,7 +252,8 @@ function initselfWebSocket(){
   var selfwebsocket = new WebSocket("ws://"+location.host+"/ws");
   selfwebsocket.onopen = function(evt){ 
     console.log("CONNECTED");
-    selfwebsocket.send(senderID);
+    var pass = prompt("Enter server password :")
+    selfwebsocket.send("$"+pass);
   };
   selfwebsocket.onclose = function(evt){ 
     console.log("DISCONNECTED");
@@ -277,7 +278,10 @@ function initselfWebSocket(){
       `;
       disp.appendChild(msgdiv);
     }catch(err){
-      console.log(err);
+      if(evt.data[0]=='$')
+        alert(evt.data);
+      else
+        console.log(err);
     }
   };
   selfwebsocket.onerror = function(evt){ 

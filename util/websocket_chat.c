@@ -8,6 +8,8 @@
 static sig_atomic_t s_signal_received = 0;
 static const char *s_http_port = "8000";
 static struct mg_serve_http_opts s_http_server_opts;
+static char serverpass[100];
+static struct mg_connection *selfClient = NULL;
 
 static void signal_handler(int sig_num) {
   signal(sig_num, signal_handler);  // Reinstantiate signal handler
@@ -33,18 +35,42 @@ static void broadcast(struct mg_connection *nc, const struct mg_str msg) {
   }
 }
 
+static void unicast(struct mg_connection *nc,const struct mg_str msg) {
+  char buf[5000];
+
+  snprintf(buf, sizeof(buf), "%.*s", (int) msg.len, msg.p);
+  printf("%s\n", buf); /* Local echo. */
+  if(nc != NULL)
+    mg_send_websocket_frame(nc, WEBSOCKET_OP_TEXT, buf, strlen(buf));
+  else
+    printf("No selfClient is connected!\n");
+  
+}
+
 static void ev_handler(struct mg_connection *nc, int ev, void *ev_data) {
   switch (ev) {
     case MG_EV_WEBSOCKET_HANDSHAKE_DONE: {
       /* New websocket connection. Tell everybody. */
-      broadcast(nc, mg_mk_str("++ joined"));
+      //broadcast(nc, mg_mk_str("++ joined"));
       break;
     }
     case MG_EV_WEBSOCKET_FRAME: {
       struct websocket_message *wm = (struct websocket_message *) ev_data;
       /* New websocket message. Tell everybody. */
       struct mg_str d = {(char *) wm->data, wm->size};
-      broadcast(nc, d);
+      if (d.p[0] == '$'){
+        char pass[100];
+        snprintf(pass, sizeof(pass), "%.*s",(int)d.len-1, &d.p[1]);
+        if(!strcmp(pass,serverpass)){
+          if(selfClient!=NULL)
+            unicast(selfClient,mg_mk_str("$Another login is encountered! Please close/refresh this window"));
+          selfClient = nc;
+          unicast(selfClient,mg_mk_str("$Access Granted!"));
+        }else
+          unicast(nc,mg_mk_str("$Access Denied!"));
+      }
+      else
+        unicast(selfClient,d);
       break;
     }
     case MG_EV_HTTP_REQUEST: {
@@ -54,14 +80,24 @@ static void ev_handler(struct mg_connection *nc, int ev, void *ev_data) {
     case MG_EV_CLOSE: {
       /* Disconnect. Tell everybody. */
       if (is_websocket(nc)) {
-        broadcast(nc, mg_mk_str("-- left"));
+        if(nc == selfClient)
+          selfClient = NULL;
+        //broadcast(nc, mg_mk_str("-- left"));
       }
       break;
     }
   }
 }
 
-int main(void) {
+int main(int argc, char** argv) {
+
+  if(argc<=1){
+    printf("Enter server password : ");
+    scanf("%s",serverpass);
+  }
+  else
+    strcpy(serverpass,argv[1]);
+
   struct mg_mgr mgr;
   struct mg_connection *nc;
 
