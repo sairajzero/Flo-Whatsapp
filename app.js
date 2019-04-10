@@ -36,7 +36,7 @@ function userDataStartUp(){
     }).catch(function (error) {
         console.log(error.message);
     });
-
+}
     function arrayToObject(array){
       obj = {};
       array.forEach(element => {
@@ -140,9 +140,6 @@ function userDataStartUp(){
           }
 
 
-}
-userDataStartUp();
-
 function getuserID(){
   return new Promise(
     function(resolve,reject){
@@ -224,6 +221,26 @@ function getDatafromIDB(){
   );
 }
 
+
+function storeMsg(data){
+  var idb = indexedDB.open("FLO_Chat",2);
+  idb.onerror = function(event) {
+    console.log("Error in opening IndexedDB!");
+  };
+  idb.onupgradeneeded = function(event) {
+    var objectStore = event.target.result.createObjectStore("messages",{ keyPath: 'time' });
+    objectStore.createIndex('text', 'text', { unique: false });
+    objectStore.createIndex('floID', 'floID', { unique: false });
+    objectStore.createIndex('type', 'type', { unique: false });
+  };
+  idb.onsuccess = function(event) {
+    var db = event.target.result;
+    var obs = db.transaction("messages", "readwrite").objectStore("messages");
+    obs.add(data);
+    db.close();
+  };
+}
+
 function displayContacts(){
   console.log('displayContacts');
   var listElement = document.getElementById('contact-display');
@@ -263,6 +280,7 @@ function initselfWebSocket(){
     try{
       var disp = document.getElementById("conversation");
       var data = JSON.parse(evt.data);
+      var time = Date.now();
       var msgdiv = document.createElement('div');
       msgdiv.setAttribute("class", "row message-body");
       msgdiv.innerHTML = `<div class="col-sm-12 message-main-receiver">
@@ -271,12 +289,12 @@ function initselfWebSocket(){
                  <b>${data.from} : </b><br/>${data.msg}
                 </span>
                 <span class="message-time pull-right">
-                  Time
+                  ${getTime(time)}
                 </span>
               </div>
-            </div>
-      `;
+            </div>`;
       disp.appendChild(msgdiv);
+      storeMsg({time:time,floID:data.from,text:data.msg,type:"R"});
     }catch(err){
       if(evt.data[0]=='$')
         alert(evt.data);
@@ -295,15 +313,28 @@ function changeReceiver(param){
   document.getElementById('recipient-floID').innerHTML = receiverID;
 }
 
+function getTime(time){
+  var t = new Date(time);
+  var months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+  var fn = function(n){
+    if(n<10)
+      return '0'+n;
+    else
+      return n;
+  };
+  var tmp = `${months[t.getMonth()]} ${fn(t.getDate())} ${t.getFullYear()} ${fn(t.getHours())}:${fn(t.getMinutes())}`;
+  return tmp;
+}
+
 function sendMsg(){
   var msg = document.getElementById('sendMsgInput').value;
   console.log(msg);
   var ws = new WebSocket("ws://"+contacts[receiverID].onionAddr+"/ws");
   ws.onopen = function(evt){
-      var data = {from:senderID,msg:msg};
-      data = JSON.stringify(data);
+      var data = JSON.stringify({from:senderID,msg:msg});
       ws.send(data);
       console.log(`sentMsg : ${data}`);
+      time = Date.now();
       var disp = document.getElementById("conversation");
       var msgdiv = document.createElement('div');
       msgdiv.setAttribute("class", "row message-body");
@@ -312,11 +343,12 @@ function sendMsg(){
                 <span class="message-text"><b>${receiverID} : </b><br/>${msg}
                 </span>
                 <span class="message-time pull-right">
-                  Time
+                  ${getTime(time)}
                 </span>
               </div>
             </div>`;
       disp.appendChild(msgdiv);
+      storeMsg({time:time,floID:receiverID,text:msg,type:"S"});
       //send_check = 1;
       //recursion_called = 0;
       //addSentChat(msg.substring(2+msgArray[0].length+msgArray[1].length),timer,msgArray[0]);

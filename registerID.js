@@ -1,6 +1,6 @@
 
-const mainnet = `https://livenet.flocha.in`;
-const testnet = `https://testnet.flocha.in`;
+const mainnet = `http://ranchimall.duckdns.org:8080`;
+const testnet = `http://ranchimall1.duckdns.org:8080`;
 
 let server = mainnet;
 const sendAmt = 0.001 ;       
