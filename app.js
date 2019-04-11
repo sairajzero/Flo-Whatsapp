@@ -25,7 +25,12 @@ function userDataStartUp(){
           contacts = arrayToObject(result);
           console.log(contacts);
           displayContacts();
-          initselfWebSocket();
+          readMsgfromIDB().then(function(result){
+            console.log(result);
+            initselfWebSocket();
+          }).catch(function(error){
+            console.log(error.message);
+          });
           //startChats();
         }).catch(function (error) {
         console.log(error.message);
@@ -73,7 +78,7 @@ function userDataStartUp(){
         return new Promise(
           function(resolve, reject) {
             var addr = "F6LUnwRRjFuEW97Y4av31eLqqVMK9FrgE2";
-            var idb = indexedDB.open("FLO_Chat",1);
+            var idb = indexedDB.open("FLO_Chat");
             idb.onerror = function(event) {
                 console.log("Error in opening IndexedDB!");
             };
@@ -221,6 +226,75 @@ function getDatafromIDB(){
   );
 }
 
+function readMsgfromIDB(){
+  return new Promise(
+    function(resolve,reject){
+      var disp = document.getElementById("conversation");
+      for(floID in contacts){
+        var createLi = document.createElement('div');
+        createLi.setAttribute("id", floID);
+        createLi.setAttribute("class", "message-inner");
+        createLi.style.display = 'none';
+        disp.appendChild(createLi);
+      }
+      var idb = indexedDB.open("FLO_Chat",2);
+      idb.onerror = function(event) {
+        reject("Error in opening IndexedDB!");
+      };
+      idb.onupgradeneeded = function(event) {
+        var objectStore = event.target.result.createObjectStore("messages",{ keyPath: 'time' });
+        objectStore.createIndex('text', 'text', { unique: false });
+        objectStore.createIndex('floID', 'floID', { unique: false });
+        objectStore.createIndex('type', 'type', { unique: false });
+      };
+      idb.onsuccess = function(event) {
+        var db = event.target.result;
+        var obs = db.transaction("messages", "readwrite").objectStore("messages");
+        obs.openCursor().onsuccess = function(event) {
+          var cursor = event.target.result;
+          if(cursor) {
+            var chat = document.getElementById(cursor.value.floID);
+            if(cursor.value.type == "R"){
+              var msgdiv = document.createElement('div');
+              msgdiv.setAttribute("class", "row message-body");
+              msgdiv.innerHTML = `<div class="col-sm-12 message-main-receiver">
+                      <div class="receiver">
+                        <span class="message-text">
+                         ${cursor.value.text}
+                        </span>
+                        <span class="message-time pull-right">
+                          ${getTime(cursor.value.time)}
+                        </span>
+                      </div>
+                    </div>`;
+              chat.appendChild(msgdiv);
+            }else if(cursor.value.type == "S"){
+              var msgdiv = document.createElement('div');
+              msgdiv.setAttribute("class", "row message-body");
+              msgdiv.innerHTML = `<div class="col-sm-12 message-main-sender">
+                      <div class="sender">
+                        <span class="message-text">${cursor.value.text}
+                        </span>
+                        <span class="message-time pull-right">
+                          ${getTime(cursor.value.time)}
+                        </span>
+                      </div>
+                    </div>`;
+              chat.appendChild(msgdiv);
+            }
+
+            cursor.continue();
+          } else {
+            console.log('Entries all displayed.');
+            resolve("Read Msg from IDB");
+          }
+        };
+        db.close();
+      };
+
+    }
+  );
+}
 
 function storeMsg(data){
   var idb = indexedDB.open("FLO_Chat",2);
@@ -246,7 +320,7 @@ function displayContacts(){
   var listElement = document.getElementById('contact-display');
   for(floID in contacts){
     var createLi = document.createElement('div');
-    createLi.setAttribute("id", floID);
+    createLi.setAttribute("name", floID);
     createLi.setAttribute("onClick", 'changeReceiver(this)');
     createLi.setAttribute("class", "row sideBar-body");
     createLi.innerHTML = `<div class="col-sm-11 col-xs-11 sideBar-main">
@@ -278,15 +352,15 @@ function initselfWebSocket(){
   selfwebsocket.onmessage = function(evt){ 
     console.log(evt.data); 
     try{
-      var disp = document.getElementById("conversation");
       var data = JSON.parse(evt.data);
       var time = Date.now();
+      var disp = document.getElementById(data.from);
       var msgdiv = document.createElement('div');
       msgdiv.setAttribute("class", "row message-body");
       msgdiv.innerHTML = `<div class="col-sm-12 message-main-receiver">
               <div class="receiver">
                 <span class="message-text">
-                 <b>${data.from} : </b><br/>${data.msg}
+                 ${data.msg}
                 </span>
                 <span class="message-time pull-right">
                   ${getTime(time)}
@@ -308,9 +382,12 @@ function initselfWebSocket(){
 }
 
 function changeReceiver(param){
-  console.log(param.id);
-  receiverID = param.id;
+  if(receiverID !== undefined)
+    document.getElementById(receiverID).style.display = 'none';
+  console.log(param.getAttribute("name"));
+  receiverID = param.getAttribute("name");
   document.getElementById('recipient-floID').innerHTML = receiverID;
+  document.getElementById(receiverID).style.display = 'block';
 }
 
 function getTime(time){
@@ -327,6 +404,10 @@ function getTime(time){
 }
 
 function sendMsg(){
+  if(receiverID === undefined){
+    alert("Select a contact and send message");
+    return;
+  }
   var msg = document.getElementById('sendMsgInput').value;
   console.log(msg);
   var ws = new WebSocket("ws://"+contacts[receiverID].onionAddr+"/ws");
@@ -335,12 +416,12 @@ function sendMsg(){
       ws.send(data);
       console.log(`sentMsg : ${data}`);
       time = Date.now();
-      var disp = document.getElementById("conversation");
+      var disp = document.getElementById(receiverID);
       var msgdiv = document.createElement('div');
       msgdiv.setAttribute("class", "row message-body");
       msgdiv.innerHTML = `<div class="col-sm-12 message-main-sender">
               <div class="sender">
-                <span class="message-text"><b>${receiverID} : </b><br/>${msg}
+                <span class="message-text">${msg}
                 </span>
                 <span class="message-time pull-right">
                   ${getTime(time)}
