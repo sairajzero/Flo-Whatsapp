@@ -10,6 +10,48 @@ if (!window.indexedDB) {
 var contacts = [];
 var receiverID,senderID;
 var selfwebsocket;
+var privKey = prompt("Enter Private Key : ")
+
+  var wallets = {
+        ecparams: EllipticCurve.getSECCurveByName("secp256k1"),
+        getPubKeyHex: function(privateKeyHex){
+          var key = new Bitcoin.ECKey(privateKeyHex);
+          if(key.priv == null){
+            alert("Invalid Private key");
+            return;
+          }
+          key.setCompressed(true);
+          var pubkeyHex = key.getPubKeyHex();
+          return pubkeyHex;
+        },
+        sign: function (msg, privateKeyHex) {
+            var key = new Bitcoin.ECKey(privateKeyHex);
+            key.setCompressed(true);
+
+            var privateKeyArr = key.getBitcoinPrivateKeyByteArray();
+            privateKey = BigInteger.fromByteArrayUnsigned(privateKeyArr);
+            var messageHash = Crypto.SHA256(msg);
+
+            var messageHashBigInteger = new BigInteger(messageHash);
+            var messageSign = Bitcoin.ECDSA.sign(messageHashBigInteger, key.priv);
+
+            var sighex = Crypto.util.bytesToHex(messageSign);
+            return sighex;
+        },
+        verify: function (msg, signatureHex, publicKeyHex) {
+            var msgHash = Crypto.SHA256(msg);
+            var messageHashBigInteger = new BigInteger(msgHash);
+
+            var sigBytes = Crypto.util.hexToBytes(signatureHex);
+            var signature = Bitcoin.ECDSA.parseSig(sigBytes);
+
+            var publicKeyPoint = this.ecparams.getCurve().decodePointHex(publicKeyHex);
+
+            var verify = Bitcoin.ECDSA.verifyRaw(messageHashBigInteger, signature.r, signature.s,
+                publicKeyPoint);
+            return verify;
+        }
+      }
 
 function convertStringToInt(string){
   return parseInt(string,10);
@@ -353,6 +395,8 @@ function initselfWebSocket(){
     console.log(evt.data); 
     try{
       var data = JSON.parse(evt.data);
+      if(!wallets.verify(data.msg,data.sign,data.pubKey))
+        return
       var time = Date.now();
       var disp = document.getElementById(data.from);
       var msgdiv = document.createElement('div');
@@ -412,7 +456,9 @@ function sendMsg(){
   console.log(msg);
   var ws = new WebSocket("ws://"+contacts[receiverID].onionAddr+"/ws");
   ws.onopen = function(evt){
-      var data = JSON.stringify({from:senderID,msg:msg});
+      var sign = wallets.sign(msg,privKey)
+      var pubkeyHex = wallets.getPubKeyHex(privKey)
+      var data = JSON.stringify({from:senderID,msg:msg,sign:sign,pubKey:pubkeyHex});
       ws.send(data);
       console.log(`sentMsg : ${data}`);
       time = Date.now();
