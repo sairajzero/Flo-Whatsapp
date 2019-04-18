@@ -23,9 +23,6 @@ static int is_websocket(const struct mg_connection *nc) {
 static void broadcast(struct mg_connection *nc, const struct mg_str msg) {
   struct mg_connection *c;
   char buf[500];
-  char addr[32];
-  mg_sock_addr_to_str(&nc->sa, addr, sizeof(addr),
-                      MG_SOCK_STRINGIFY_IP | MG_SOCK_STRINGIFY_PORT);
 
   snprintf(buf, sizeof(buf), "%.*s", (int) msg.len, msg.p);
   printf("%s\n", buf); /* Local echo. */
@@ -66,8 +63,15 @@ static void ev_handler(struct mg_connection *nc, int ev, void *ev_data) {
             unicast(selfClient,mg_mk_str("$Another login is encountered! Please close/refresh this window"));
           selfClient = nc;
           unicast(selfClient,mg_mk_str("$Access Granted!"));
+          broadcast(nc, mg_mk_str("#+"));
         }else
           unicast(nc,mg_mk_str("$Access Denied!"));
+      }
+      else if(d.p[0] == '#'){
+        if(selfClient == NULL)
+          unicast(nc,mg_mk_str("#-"));
+        else
+          unicast(nc,mg_mk_str("#+"));
       }
       else
         unicast(selfClient,d);
@@ -80,9 +84,10 @@ static void ev_handler(struct mg_connection *nc, int ev, void *ev_data) {
     case MG_EV_CLOSE: {
       /* Disconnect. Tell everybody. */
       if (is_websocket(nc)) {
-        if(nc == selfClient)
+        if(nc == selfClient){
           selfClient = NULL;
-        //broadcast(nc, mg_mk_str("-- left"));
+          broadcast(nc, mg_mk_str("#-"));
+        }  
       }
       break;
     }

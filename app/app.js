@@ -9,10 +9,143 @@ if (!window.indexedDB) {
 
 var contacts = [];
 var receiverID,senderID;
-var selfwebsocket;
-var privKey = prompt("Enter Private Key : ")
+var selfwebsocket,receiverWebSocket;
+var privKey;
 
-  var wallets = {
+var encrypt = {
+
+            p: BigInteger("FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEFFFFFC2F", 16),
+
+            exponent1: function () {
+                return encrypt.p.add(BigInteger.ONE).divide(BigInteger("4"))
+            },
+
+            calculateY: function (x) {
+                let p = this.p;
+                let exp = this.exponent1();
+                // x is x value of public key in BigInteger format without 02 or 03 or 04 prefix
+                return x.modPow(BigInteger("3"), p).add(BigInteger("7")).mod(p).modPow(exp, p)
+            },
+
+            // Insert a compressed public key
+            getUncompressedPublicKey: function (compressedPublicKey) {
+
+                const p = this.p;
+
+                // Fetch x from compressedPublicKey
+                let pubKeyBytes = Crypto.util.hexToBytes(compressedPublicKey);
+                const prefix = pubKeyBytes.shift() // remove prefix
+                let prefix_modulus = prefix % 2;
+                pubKeyBytes.unshift(0) // add prefix 0
+                let x = new BigInteger(pubKeyBytes)
+                let xDecimalValue = x.toString()
+
+                // Fetch y
+                let y = this.calculateY(x);
+                let yDecimalValue = y.toString();
+
+                // verify y value
+                let resultBigInt = y.mod(BigInteger("2"));
+
+                let check = resultBigInt.toString() % 2;
+
+                if (prefix_modulus !== check) {
+                    yDecimalValue = y.negate().mod(p).toString();
+                }
+
+                return {
+                    x: xDecimalValue,
+                    y: yDecimalValue
+                };
+            },
+
+            getSenderPublicKeyString: function () {
+                privateKey = ellipticCurveEncryption.senderRandom();
+                senderPublicKeyString = ellipticCurveEncryption.senderPublicString(privateKey);
+                return {
+                    privateKey: privateKey,
+                    senderPublicKeyString: senderPublicKeyString
+                }
+            },
+
+            deriveSharedKeySender: function (receiverCompressedPublicKey, senderPrivateKey) {
+                try {
+                    let receiverPublicKeyString = this.getUncompressedPublicKey(
+                        receiverCompressedPublicKey);
+                    var senderDerivedKey = {
+                        XValue: "",
+                        YValue: ""
+                    };
+                    senderDerivedKey = ellipticCurveEncryption.senderSharedKeyDerivation(
+                        receiverPublicKeyString.x,
+                        receiverPublicKeyString.y, senderPrivateKey);
+                    return senderDerivedKey;
+                } catch (error) {
+                    return new Error(error);
+                }
+            },
+
+            deriveReceiverSharedKey: function (senderPublicKeyString, receiverPrivateKey) {
+                return ellipticCurveEncryption.receiverSharedKeyDerivation(
+                    senderPublicKeyString.XValuePublicString, senderPublicKeyString.YValuePublicString,
+                    receiverPrivateKey);
+            },
+
+            getReceiverPublicKeyString: function (privateKey) {
+                return ellipticCurveEncryption.receiverPublicString(privateKey);
+            },
+
+            deriveSharedKeyReceiver: function (senderPublicKeyString, receiverPrivateKey) {
+                try {
+                    return ellipticCurveEncryption.receiverSharedKeyDerivation(senderPublicKeyString.XValuePublicString,
+                        senderPublicKeyString.YValuePublicString, receiverPrivateKey);
+
+                } catch (error) {
+                    return new Error(error);
+                }
+            },
+
+            encryptMessage: function (data, receiverCompressedPublicKey) {
+                var senderECKeyData = this.getSenderPublicKeyString();
+                var senderDerivedKey = {
+                    XValue: "",
+                    YValue: ""
+                };
+                var senderPublicKeyString = {};
+                senderDerivedKey = this.deriveSharedKeySender(
+                    receiverCompressedPublicKey, senderECKeyData.privateKey);
+                console.log("senderDerivedKey", senderDerivedKey);
+                let senderKey = senderDerivedKey.XValue + senderDerivedKey.YValue;
+                let secret = Crypto.AES.encrypt(data, senderKey);
+                return {
+                    secret: secret,
+                    senderPublicKeyString: senderECKeyData.senderPublicKeyString
+                };
+            },
+
+            decryptMessage: function (secret, senderPublicKeyString) {
+                var receiverDerivedKey = {
+                    XValue: "",
+                    YValue: ""
+                };
+                var receiverECKeyData = {};
+                var myPrivateKey = privKey;
+                if (typeof myPrivateKey !== "string") throw new Error("No private key found.");
+
+                let privateKey = this.wifToDecimal(myPrivateKey, true);
+                if (typeof privateKey.privateKeyDecimal !== "string") throw new Error(
+                    "Failed to detremine your private key.");
+                receiverECKeyData.privateKey = privateKey.privateKeyDecimal;
+
+                receiverDerivedKey = this.deriveReceiverSharedKey(senderPublicKeyString,
+                    receiverECKeyData.privateKey);
+                console.log("receiverDerivedKey", receiverDerivedKey);
+
+                let receiverKey = receiverDerivedKey.XValue + receiverDerivedKey.YValue;
+                let decryptMsg = Crypto.AES.decrypt(secret, receiverKey);
+                return decryptMsg;
+            },
+
         ecparams: EllipticCurve.getSECCurveByName("secp256k1"),
         getPubKeyHex: function(privateKeyHex){
           var key = new Bitcoin.ECKey(privateKeyHex);
@@ -23,6 +156,11 @@ var privKey = prompt("Enter Private Key : ")
           key.setCompressed(true);
           var pubkeyHex = key.getPubKeyHex();
           return pubkeyHex;
+        },
+        getFLOIDfromPubkeyHex: function(pubkeyHex){
+          var key =  new Bitcoin.ECKey().setPub(pubkeyHex);
+          var floID = key.getBitcoinAddress();
+          return floID;
         },
         sign: function (msg, privateKeyHex) {
             var key = new Bitcoin.ECKey(privateKeyHex);
@@ -50,7 +188,21 @@ var privKey = prompt("Enter Private Key : ")
             var verify = Bitcoin.ECDSA.verifyRaw(messageHashBigInteger, signature.r, signature.s,
                 publicKeyPoint);
             return verify;
-        }
+        },
+        wifToDecimal: function(pk_wif, isPubKeyCompressed = false) {
+                let pk = Bitcoin.Base58.decode(pk_wif)
+                pk.shift()
+                pk.splice(-4, 4)
+                //If the private key corresponded to a compressed public key, also drop the last byte (it should be 0x01).
+                if (isPubKeyCompressed == true) pk.pop()
+                pk.unshift(0)
+                privateKeyDecimal = BigInteger(pk).toString()
+                privateKeyHex = Crypto.util.bytesToHex(pk)
+                return {
+                    privateKeyDecimal: privateKeyDecimal,
+                    privateKeyHex: privateKeyHex
+                }
+            }
       }
 
 function convertStringToInt(string){
@@ -61,15 +213,18 @@ function userDataStartUp(){
     console.log("StartUp");
     getDatafromAPI().then(function (result) {
       console.log(result);
-      getuserID().then(function(result){
-        console.log(result);
-        getDatafromIDB().then(function(result){
-          contacts = arrayToObject(result);
-          console.log(contacts);
-          displayContacts();
+      getDatafromIDB().then(function(result){
+        contacts = arrayToObject(result);
+        console.log(contacts);
+        getuserID().then(function(result){
+          console.log(result);
+          senderID = result;
+          alert(`${senderID}\nWelcome ${contacts[senderID].name}`)
           readMsgfromIDB().then(function(result){
             console.log(result);
             initselfWebSocket();
+            displayContacts();
+            const createClock = setInterval(checkStatusInterval, 30000);
           }).catch(function(error){
             console.log(error.message);
           });
@@ -87,7 +242,7 @@ function userDataStartUp(){
     function arrayToObject(array){
       obj = {};
       array.forEach(element => {
-        obj[element.floID] = {onionAddr : element.onionAddr, name : element.name};
+        obj[element.floID] = {onionAddr : element.onionAddr, name : element.name, pubKey : element.pubKey};
       });
       return obj;
     }
@@ -126,8 +281,9 @@ function userDataStartUp(){
             };
             idb.onupgradeneeded = function(event) {
                    var objectStore = event.target.result.createObjectStore("contacts",{ keyPath: 'floID' });
-                   objectStore.createIndex('onionAddr', 'onionAddr', { unique: true });
+                   objectStore.createIndex('onionAddr', 'onionAddr', { unique: false });
                    objectStore.createIndex('name', 'name', { unique: false });
+                   objectStore.createIndex('pubKey', 'pubKey', { unique: false });
                    var objectStore2 = event.target.result.createObjectStore("lastTx");
             };
             idb.onsuccess = function(event) {
@@ -162,7 +318,9 @@ function userDataStartUp(){
                               //return;
                             var data = JSON.parse(tx.floData).FLO_chat;
                             if(data !== undefined){
-                              data = {floID : tx.vin[0].addr, onionAddr : data.onionAddr, name : data.name};
+                              if(encrypt.getFLOIDfromPubkeyHex(data.pubKey)!=tx.vin[0].addr)
+                                throw("PublicKey doesnot match with floID")
+                              data = {floID : tx.vin[0].addr, onionAddr : data.onionAddr, name : data.name, pubKey:data.pubKey};
                               storedata(data).then(function (response) {
                               }).catch(function (error) {
                                   console.log(error.message);
@@ -190,57 +348,30 @@ function userDataStartUp(){
 function getuserID(){
   return new Promise(
     function(resolve,reject){
-      var idb = indexedDB.open("FLO_Chat");
-      idb.onerror = function(event) {
-        console.log("Error in opening IndexedDB!");
-      };
-      idb.onsuccess = function(event) {
-               var db = event.target.result;
-               var obs = db.transaction('lastTx', "readwrite").objectStore('lastTx');
-               new Promise(function(res,rej){
-                 var getReq = obs.get('userID');
-                 getReq.onsuccess = function(event){
-                  var userID = event.target.result;
-                  if(userID === undefined){
-                      userID = prompt("Enter A Valid Flo ID!");
-                      while(!validateAddr(userID)){
-                          userID = prompt("Retry!Enter A Valid Flo ID!");
-                        }
-                        
-                        var obs2 = db.transaction('contacts', "readwrite").objectStore('contacts');
-                        var getReq2 = obs2.get(userID);
-                        getReq2.onsuccess = function(event){
-                          var data = event.target.result;
-                          console.log(window.location.host);
-                          //console.log(data.onionAddr);
-                          if(data === undefined)
-                            var reg = confirm('FLO ID is not registers to FLO chat!\nRegister FLO ID?');
-                          else if(data.onionAddr == window.location.host)
-                            res(userID);
-                          else
-                            var reg = confirm('FLO ID is registered to another onion!\nChange FLO ID to this onion?');
-                          if(reg)
-                            if(registerID(userID,window.location.host))
-                              res(userID);
-                          rej('Unable to register userID!\nTry again later!');
-                        }
-                  }
-                  else
-                    res(userID);
-                }
-              }).then(function(result){
-                console.log(result);
-                var obs = db.transaction('lastTx', "readwrite").objectStore('lastTx');
-                senderID = result;
-                obs.put(result,'userID');
-                db.close();
-                resolve('userID Initiated')
-              }).catch(function(error){
-                db.close();
-                console.log(error.message);
-                reject('userID Initiation Failed');
-              });   
-      };
+      privKey = prompt("Enter FLO Private Key : ")
+      var key = new Bitcoin.ECKey(privKey);
+      while(key.priv == null){
+        privKey = prompt("Invalid FLO Private Key! Retry : ")
+        key = Bitcoin.ECKey(privKey);
+      }
+      key.setCompressed(true);
+      var userID = key.getBitcoinAddress();
+      if (contacts[userID] ===  undefined)
+        var reg = confirm(`${userID} is not registers to FLO chat!\nRegister FLO ID to this onion?`);
+      else if (contacts[userID].onionAddr == window.location.host)
+        resolve(userID)
+      else
+        var reg = confirm(`${userID} is registered to another onion!\nChange to this onion?`);
+      
+      if(reg){
+        var name = prompt("Enter your name :");
+        var pubKey = key.getPubKeyHex();
+        if(registerID(userID,window.location.host,privKey,pubKey,name)){
+          contacts[userID] = {onionAddr : window.location.host, name : name, pubKey : pubKey};
+          resolve(userID);
+        }       
+      }
+      reject(`Unable to bind ${userID} to this onionAddress!\nTry again later!`);
     }
   );
 }
@@ -333,7 +464,6 @@ function readMsgfromIDB(){
         };
         db.close();
       };
-
     }
   );
 }
@@ -395,7 +525,8 @@ function initselfWebSocket(){
     console.log(evt.data); 
     try{
       var data = JSON.parse(evt.data);
-      if(!wallets.verify(data.msg,data.sign,data.pubKey))
+      var msg = encrypt.decryptMessage(data.secret,data.pubVal)
+      if(!encrypt.verify(msg,data.sign,contacts[data.from].pubKey))
         return
       var time = Date.now();
       var disp = document.getElementById(data.from);
@@ -404,7 +535,7 @@ function initselfWebSocket(){
       msgdiv.innerHTML = `<div class="col-sm-12 message-main-receiver">
               <div class="receiver">
                 <span class="message-text">
-                 ${data.msg}
+                 ${msg}
                 </span>
                 <span class="message-time pull-right">
                   ${getTime(time)}
@@ -412,7 +543,7 @@ function initselfWebSocket(){
               </div>
             </div>`;
       disp.appendChild(msgdiv);
-      storeMsg({time:time,floID:data.from,text:data.msg,type:"R"});
+      storeMsg({time:time,floID:data.from,text:msg,type:"R"});
     }catch(err){
       if(evt.data[0]=='$')
         alert(evt.data);
@@ -425,13 +556,63 @@ function initselfWebSocket(){
   };
 }
 
+function checkStatusInterval(){
+  try{
+    if(receiverWebSocket !== undefined && receiverWebSocket.readyState !== WebSocket.OPEN){
+      receiverWebSocket.close()
+      receiverWebSocket = new WebSocket("ws://"+contacts[receiverID].onionAddr+"/ws");
+      receiverWebSocket.onopen = function(evt){ receiverWebSocket.send('#') };
+      receiverWebSocket.onerror = function(ev) { receiverStatus(false); };
+      receiverWebSocket.onclose = function(ev) { receiverStatus(false); };
+      receiverWebSocket.onmessage = function(evt){ 
+      console.log(evt.data); 
+      if(evt.data[0]=='#'){
+        if (evt.data[1]=='+')
+          receiverStatus(true);
+        else if(evt.data[1]=='-')
+          receiverStatus(false);
+      }
+    }
+    }    
+  }catch(e){
+    console.log(e);
+  }
+}
+
 function changeReceiver(param){
   if(receiverID !== undefined)
     document.getElementById(receiverID).style.display = 'none';
   console.log(param.getAttribute("name"));
   receiverID = param.getAttribute("name");
   document.getElementById('recipient-floID').innerHTML = receiverID;
+  receiverStatus(false)
   document.getElementById(receiverID).style.display = 'block';
+  try{
+    if(receiverWebSocket !== undefined && receiverWebSocket.readyState === WebSocket.OPEN)
+      receiverWebSocket.close()
+    receiverWebSocket = new WebSocket("ws://"+contacts[receiverID].onionAddr+"/ws");
+    receiverWebSocket.onopen = function(ev){ receiverWebSocket.send('#'); };
+    receiverWebSocket.onerror = function(ev) { receiverStatus(false); };
+    receiverWebSocket.onclose = function(ev) { receiverStatus(false); };
+    receiverWebSocket.onmessage = function(evt){ 
+      console.log(evt.data); 
+      if(evt.data[0]=='#'){
+        if (evt.data[1]=='+')
+          receiverStatus(true);
+        else if(evt.data[1]=='-')
+          receiverStatus(false);
+      }
+    }
+  }catch(e){
+    console.log(e);
+  }
+}
+
+function receiverStatus(status){
+  if(status)
+    document.getElementById('recipient-floID').style.backgroundColor = "#00b300";
+  else
+    document.getElementById('recipient-floID').style.backgroundColor = "#ff4d4d";
 }
 
 function getTime(time){
@@ -452,15 +633,19 @@ function sendMsg(){
     alert("Select a contact and send message");
     return;
   }
-  var msg = document.getElementById('sendMsgInput').value;
+  if(receiverWebSocket.readyState !== WebSocket.OPEN){
+    alert("Recipient is offline! Try again later")
+    return
+  }
+  var inp = document.getElementById('sendMsgInput')
+  var msg = inp.value;
+  inp.value = "";
   console.log(msg);
-  var ws = new WebSocket("ws://"+contacts[receiverID].onionAddr+"/ws");
-  ws.onopen = function(evt){
-      var sign = wallets.sign(msg,privKey)
-      var pubkeyHex = wallets.getPubKeyHex(privKey)
-      var data = JSON.stringify({from:senderID,msg:msg,sign:sign,pubKey:pubkeyHex});
-      ws.send(data);
-      console.log(`sentMsg : ${data}`);
+  var sign = encrypt.sign(msg,privKey)
+  var msgEncrypt = encrypt.encryptMessage(msg,contacts[receiverID].pubKey)
+  var data = JSON.stringify({from:senderID,secret:msgEncrypt.secret,sign:sign,pubVal:msgEncrypt.senderPublicKeyString});
+  receiverWebSocket.send(data);
+  console.log(`sentMsg : ${data}`);
       time = Date.now();
       var disp = document.getElementById(receiverID);
       var msgdiv = document.createElement('div');
@@ -476,11 +661,4 @@ function sendMsg(){
             </div>`;
       disp.appendChild(msgdiv);
       storeMsg({time:time,floID:receiverID,text:msg,type:"S"});
-      //send_check = 1;
-      //recursion_called = 0;
-      //addSentChat(msg.substring(2+msgArray[0].length+msgArray[1].length),timer,msgArray[0]);
-      //addTick(message);
-    }
-  ws.onerror = function(ev) { console.log(ev); };
-  ws.onclose = function(ev) { console.log(ev); };
 }
