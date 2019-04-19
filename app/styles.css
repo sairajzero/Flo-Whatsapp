@@ -106,6 +106,14 @@ body {
   color: #000;
   display: block;
 }
+
+#recipient-status{
+  border-radius: 50%;
+  background: none; 
+  height: 25px;
+  width: 25px;
+  color:white;
+}
 .heading-online {
   display: none;
   padding: 0 5px;
@@ -388,7 +396,6 @@ body {
   border-radius: 10px 10px 10px 0;
   background: #ffffff;
   font-size: 12px;
-  text-shadow: 0 1px 1px rgba(0, 0, 0, .2);
   word-wrap: break-word;
   display: inline-block;
   height: auto;
@@ -399,11 +406,10 @@ body {
   float: right;
   width: auto !important;
   height: auto;
-  background: gray;
+  background: #dcf8c6;
   border-radius: 10px 10px 0 10px;
   padding: 4px 10px 7px !important;
   font-size: 12px;
-  text-shadow: 0 1px 1px rgba(0, 0, 0, .2);
   display: inline-block;
   word-wrap: break-word;
 }
@@ -457,7 +463,7 @@ body {
   padding: 2px 5px !important;
 }
 
-.reply-main textarea {
+.reply-main input {
   width: 100%;
   resize: none;
   overflow: hidden;
@@ -470,7 +476,7 @@ body {
   font-size: 16px;
 }
 
-.reply-main textarea:focus {
+.reply-main input:focus {
   outline: none;
   border: none;
   text-indent: 5px;
@@ -574,7 +580,7 @@ body {
   .reply-main {
     padding: 2px 8px !important;
   }
-  .reply-main textarea {
+  .reply-main input {
     padding: 8px !important;
     font-size: 18px;
   }

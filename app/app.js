@@ -8,7 +8,7 @@ if (!window.indexedDB) {
 }
 
 var contacts = [];
-var receiverID,senderID;
+var receiverID,senderID,recStat;
 var selfwebsocket,receiverWebSocket;
 var privKey;
 
@@ -211,6 +211,14 @@ function convertStringToInt(string){
 
 function userDataStartUp(){
     console.log("StartUp");
+
+    document.getElementById("sendMsgInput").addEventListener("keyup",function(event){
+      if(event.keyCode === 13){
+        event.preventDefault();
+        sendMsg();
+      }
+    });
+
     getDatafromAPI().then(function (result) {
       console.log(result);
       getDatafromIDB().then(function(result){
@@ -238,6 +246,7 @@ function userDataStartUp(){
     }).catch(function (error) {
         console.log(error.message);
     });
+
 }
     function arrayToObject(array){
       obj = {};
@@ -610,9 +619,10 @@ function changeReceiver(param){
 
 function receiverStatus(status){
   if(status)
-    document.getElementById('recipient-floID').style.backgroundColor = "#00b300";
+    document.getElementById('recipient-status').style.color = "#4CC94C";
   else
-    document.getElementById('recipient-floID').style.backgroundColor = "#ff4d4d";
+    document.getElementById('recipient-status').style.color = "#CD5C5C";
+  recStat = status;
 }
 
 function getTime(time){
@@ -633,7 +643,7 @@ function sendMsg(){
     alert("Select a contact and send message");
     return;
   }
-  if(receiverWebSocket.readyState !== WebSocket.OPEN){
+  if(!recStat){
     alert("Recipient is offline! Try again later")
     return
   }
