@@ -24,7 +24,7 @@ This is a peer-peer Whatsapp like chat application totally encrypted in transit 
 2. FLO-Whatsapp server and Tor will be started automatically. (Hidden_service will be created on the 1st time). Your hidden_service onion address will be displayed in information dialog box
 ![Screenshot](screenshots/start-server.png)
 3. Open the onion address (url) in Onion browser (Brave for desktop or Orfox for android) [not necessary to be on the same device]
-4. Enter the FLO_ID private key when prompted. [FLO_ID can be generated using flo_webWallet (https://flo-webwallet.duckdns.org/) or flo-core wallet (https://github.com/ranchimall/FLO-wallet-core)] 
+4. Enter the FLO_ID private key when prompted. [FLO_ID can be generated using flo_webWallet (https://flo-webwallet.duckdns.org/) or flo-core wallet (https://github.com/ranchimall/FLO-wallet-core)] [!FLO_ID private key is most important !DO NOT lose or share it]
 ![Screenshot](screenshots/step4.png)
 5. New users and users changing the onion address will require to register in the FLO blockchain. (The registration is automatic, just click on ok when prompted and enter your name). A minimum amount will be required to register [Balance recharge can be done using https://international.bittrex.com/]. Upon successful registration the txid will be alerted 
 ![Screenshot](screenshots/step5_1.png)
