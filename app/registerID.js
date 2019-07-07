@@ -1,11 +1,12 @@
     
 const  crypto = "FLO"
-    const mainnet = `https://livenet.flocha.in`;
-    const testnet = `https://testnet.flocha.in`;
+    const mainnet = `https://flosight.duckdns.org`;
+    const testnet = `https://testnet-flosight.duckdns.org`;
 if(crypto == "FLO")
   var server = mainnet;
 else if(crypto == "FLO_TEST")
   var server = testnet;
+const adminID = "FRR3Zz5Nod6oZTHE18seMpMYLzuLGuBWz4";
 
 const sendAmt = 0.001 ;       
 const fee = 0.0005;
@@ -6132,7 +6133,7 @@ function ajax(method, uri){
     
 function registerID(sender,onionAddr,wif,pubkey,username) {
         
-        var receiver = "F6LUnwRRjFuEW97Y4av31eLqqVMK9FrgE2";  
+        var receiver = adminID;  
 
         var trx = bitjs.transaction();
         var utxoAmt = 0.0;

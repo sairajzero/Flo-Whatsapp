@@ -8,8 +8,8 @@ if (!window.indexedDB) {
 }
 
 var contacts = [];
-var receiverID,senderID,recStat;
-var selfwebsocket,receiverWebSocket;
+var receiverID,selfID,recStat;
+var selfwebsocket,receiverWebSocket,receiverSuperNodeWS;
 var privKey;
 
 var encrypt = {
@@ -221,24 +221,38 @@ function userDataStartUp(){
 
     getDatafromAPI().then(function (result) {
       console.log(result);
-      getDatafromIDB().then(function(result){
+      getContactsfromIDB().then(function(result){
         contacts = arrayToObject(result);
         console.log(contacts);
-        getuserID().then(function(result){
-          console.log(result);
-          senderID = result;
-          alert(`${senderID}\nWelcome ${contacts[senderID].name}`)
-          readMsgfromIDB().then(function(result){
-            console.log(result);
-            initselfWebSocket();
-            displayContacts();
-            const createClock = setInterval(checkStatusInterval, 30000);
+        getSuperNodeListfromIDB().then(function(result){
+          console.log(result)
+          superNodeList = result;
+          kBucketObj.launchKBucket().then(function(result){
+            console.log(result)
+            getuserID().then(function(result){
+              console.log(result);
+              selfID = result;
+              if(superNodeList.includes(selfID))
+                  modSuperNode = true;
+              alert(`${selfID}\nWelcome ${contacts[selfID].name}`)
+              readMsgfromIDB().then(function(result){
+                console.log(result);
+                initselfWebSocket();
+                pingSuperNodeForMessages();
+                displayContacts();
+                const createClock = setInterval(checkStatusInterval, 30000);
+              }).catch(function(error){
+                console.log(error);
+              });
+              //startChats();
+            }).catch(function (error) {
+            console.log(error.message);
+            });
           }).catch(function(error){
             console.log(error.message);
-          });
-          //startChats();
+          }); 
         }).catch(function (error) {
-        console.log(error.message);
+          console.log(error.message);
         });
       }).catch(function (error) {
         console.log(error.message);
@@ -256,7 +270,7 @@ function userDataStartUp(){
       return obj;
     }
 
-    function storedata(data){
+    function storeContact(data){
       return new Promise(
         function(resolve, reject) {
           var idb = indexedDB.open("FLO_Chat");
@@ -280,20 +294,48 @@ function userDataStartUp(){
        );
      }
 
+    function storeSuperNodeData(data){
+      return new Promise(
+        function(resolve, reject) {
+          var idb = indexedDB.open("FLO_Chat");
+          idb.onerror = function(event) {
+              reject("Error in opening IndexedDB!");
+          };
+          idb.onsuccess = function(event) {
+              var db = event.target.result;
+              var obs = db.transaction('superNodes', "readwrite").objectStore('superNodes');
+              if(data.addNodes)
+                for(var i=0; i<data.addNodes.length; i++)
+                  obs.add(true,data.addNodes[i])
+              if(data.removeNodes)
+                for(var i=0; i<data.removeNodes.length; i++)
+                  obs.delete(data.removeNodes[i])
+              db.close();
+              resolve('Updated superNodes list in IDB');
+            };
+          }
+       );
+    }
+
       function getDatafromAPI(){
         return new Promise(
           function(resolve, reject) {
-            var addr = "F6LUnwRRjFuEW97Y4av31eLqqVMK9FrgE2";
+            var addr = adminID;
             var idb = indexedDB.open("FLO_Chat");
             idb.onerror = function(event) {
                 console.log("Error in opening IndexedDB!");
             };
             idb.onupgradeneeded = function(event) {
-                   var objectStore = event.target.result.createObjectStore("contacts",{ keyPath: 'floID' });
-                   objectStore.createIndex('onionAddr', 'onionAddr', { unique: false });
-                   objectStore.createIndex('name', 'name', { unique: false });
-                   objectStore.createIndex('pubKey', 'pubKey', { unique: false });
+                    var objectStore0 = event.target.result.createObjectStore("superNodes");
+                   var objectStore1 = event.target.result.createObjectStore("contacts",{ keyPath: 'floID' });
+                    objectStore1.createIndex('onionAddr', 'onionAddr', { unique: false });
+                    objectStore1.createIndex('name', 'name', { unique: false });
+                    objectStore1.createIndex('pubKey', 'pubKey', { unique: false });
                    var objectStore2 = event.target.result.createObjectStore("lastTx");
+                   var objectStore3 = event.target.result.createObjectStore("messages",{ keyPath: 'time' });
+                    objectStore3.createIndex('text', 'text', { unique: false });
+                    objectStore3.createIndex('floID', 'floID', { unique: false });
+                    objectStore3.createIndex('type', 'type', { unique: false });
             };
             idb.onsuccess = function(event) {
                var db = event.target.result;
@@ -323,20 +365,28 @@ function userDataStartUp(){
                         }
                         response.items.reverse().forEach(function(tx){
                           try {
-                            //if (tx.vin[0].addr != addr)
-                              //return;
-                            var data = JSON.parse(tx.floData).FLO_chat;
-                            if(data !== undefined){
-                              if(encrypt.getFLOIDfromPubkeyHex(data.pubKey)!=tx.vin[0].addr)
-                                throw("PublicKey doesnot match with floID")
-                              data = {floID : tx.vin[0].addr, onionAddr : data.onionAddr, name : data.name, pubKey:data.pubKey};
-                              storedata(data).then(function (response) {
-                              }).catch(function (error) {
-                                  console.log(error.message);
-                              });
+                            if (tx.vin[0].addr == addr){
+                              var data = JSON.parse(tx.floData).FLO_chat_SuperNode;
+                              if(data !== undefined){
+                                storeSuperNodeData(data).then(function (response) {
+                                }).catch(function (error) {
+                                    console.log(error.message);
+                                });
+                              }
+                            }else{
+                              var data = JSON.parse(tx.floData).FLO_chat;
+                              if(data !== undefined){
+                                if(encrypt.getFLOIDfromPubkeyHex(data.pubKey)!=tx.vin[0].addr)
+                                  throw("PublicKey doesnot match with floID")
+                                data = {floID : tx.vin[0].addr, onionAddr : data.onionAddr, name : data.name, pubKey:data.pubKey};
+                                storeContact(data).then(function (response) {
+                                }).catch(function (error) {
+                                    console.log(error.message);
+                                });
+                              }
                             }  
                           } catch (e) {
-                            //console.log(e)
+                            console.log(e)
                           }
                         });
 
@@ -352,7 +402,6 @@ function userDataStartUp(){
               }
             );
           }
-
 
 function getuserID(){
   return new Promise(
@@ -385,7 +434,7 @@ function getuserID(){
   );
 }
 
-function getDatafromIDB(){
+function getContactsfromIDB(){
   return new Promise(
     function(resolve,reject){
       var idb = indexedDB.open("FLO_Chat");
@@ -408,6 +457,29 @@ function getDatafromIDB(){
   );
 }
 
+function getSuperNodeListfromIDB(){
+  return new Promise(
+    function(resolve,reject){
+      var idb = indexedDB.open("FLO_Chat");
+      idb.onerror = function(event) {
+         reject("Error in opening IndexedDB!");
+      };
+      idb.onsuccess = function(event) {
+        var db = event.target.result;
+        var obs = db.transaction("superNodes", "readwrite").objectStore("superNodes");
+        var getReq = obs.getAllKeys();
+        getReq.onsuccess = function(event){
+          resolve(event.target.result);
+        }
+        getReq.onerror = function(event){
+          reject('Unable to read superNode list!')
+        }
+        db.close();
+      };
+    }
+  );
+}
+
 function readMsgfromIDB(){
   return new Promise(
     function(resolve,reject){
@@ -419,15 +491,9 @@ function readMsgfromIDB(){
         createLi.style.display = 'none';
         disp.appendChild(createLi);
       }
-      var idb = indexedDB.open("FLO_Chat",2);
+      var idb = indexedDB.open("FLO_Chat");
       idb.onerror = function(event) {
         reject("Error in opening IndexedDB!");
-      };
-      idb.onupgradeneeded = function(event) {
-        var objectStore = event.target.result.createObjectStore("messages",{ keyPath: 'time' });
-        objectStore.createIndex('text', 'text', { unique: false });
-        objectStore.createIndex('floID', 'floID', { unique: false });
-        objectStore.createIndex('type', 'type', { unique: false });
       };
       idb.onsuccess = function(event) {
         var db = event.target.result;
@@ -478,20 +544,35 @@ function readMsgfromIDB(){
 }
 
 function storeMsg(data){
-  var idb = indexedDB.open("FLO_Chat",2);
+  var idb = indexedDB.open("FLO_Chat");
   idb.onerror = function(event) {
     console.log("Error in opening IndexedDB!");
-  };
-  idb.onupgradeneeded = function(event) {
-    var objectStore = event.target.result.createObjectStore("messages",{ keyPath: 'time' });
-    objectStore.createIndex('text', 'text', { unique: false });
-    objectStore.createIndex('floID', 'floID', { unique: false });
-    objectStore.createIndex('type', 'type', { unique: false });
   };
   idb.onsuccess = function(event) {
     var db = event.target.result;
     var obs = db.transaction("messages", "readwrite").objectStore("messages");
     obs.add(data);
+    db.close();
+  };
+}
+
+function storeSuperNodeMsg(data){
+  var idb = indexedDB.open("FLO_Chat",2);
+  idb.onerror = function(event) {
+    console.log("Error in opening IndexedDB!");
+  };
+  idb.onupgradeneeded = function(event) {
+    var objectStore = event.target.result.createObjectStore("superNodeMsg",{ keyPath: 'id' });
+    objectStore.createIndex('from', 'from', { unique: false });
+    objectStore.createIndex('to', 'to', { unique: false });
+    objectStore.createIndex('data', 'data', { unique: false });
+  };
+  idb.onsuccess = function(event) {
+    var db = event.target.result;
+    var obs = db.transaction("superNodeMsg", "readwrite").objectStore("superNodeMsg");
+    var parsedData = JSON.parse(data);
+    var id = ''+parsedData.from+'_'+parsedData.to+'_'+parsedData.time; 
+    obs.add({id:id,from:parsedData.from,to:parsedData.to,data:data});
     db.close();
   };
 }
@@ -534,25 +615,42 @@ function initselfWebSocket(){
     console.log(evt.data); 
     try{
       var data = JSON.parse(evt.data);
-      var msg = encrypt.decryptMessage(data.secret,data.pubVal)
-      if(!encrypt.verify(msg,data.sign,contacts[data.from].pubKey))
-        return
-      var time = Date.now();
-      var disp = document.getElementById(data.from);
-      var msgdiv = document.createElement('div');
-      msgdiv.setAttribute("class", "row message-body");
-      msgdiv.innerHTML = `<div class="col-sm-12 message-main-receiver">
-              <div class="receiver">
-                <span class="message-text">
-                 ${msg}
-                </span>
-                <span class="message-time pull-right">
-                  ${getTime(time)}
-                </span>
-              </div>
-            </div>`;
-      disp.appendChild(msgdiv);
-      storeMsg({time:time,floID:data.from,text:msg,type:"R"});
+      if(data.to == selfID){
+        console.log('Incoming self')
+        var msg = encrypt.decryptMessage(data.secret,data.pubVal)
+        if(!encrypt.verify(msg,data.sign,contacts[data.from].pubKey))
+          return
+        var time = Date.now();
+        var disp = document.getElementById(data.from);
+        var msgdiv = document.createElement('div');
+        msgdiv.setAttribute("class", "row message-body");
+        msgdiv.innerHTML = `<div class="col-sm-12 message-main-receiver">
+                <div class="receiver">
+                  <span class="message-text">
+                  ${msg}
+                  </span>
+                  <span class="message-time pull-right">
+                    ${getTime(time)}
+                  </span>
+                </div>
+              </div>`;
+        disp.appendChild(msgdiv);
+        storeMsg({time:time,floID:data.from,text:msg,type:"R"});
+      }else if(modSuperNode){
+
+        if(data.pingNewMsg)
+          sendStoredSuperNodeMsgs(data.floID)
+
+        else{
+          kBucketObj.determineClosestSupernode(data.to).then(result=>{
+            console.log(result)
+            if(result[0].floID == selfID)
+              storeSuperNodeMsg(evt.data);
+          }).catch(e => {
+            console.log(e.message);
+          }); 
+        }        
+      }
     }catch(err){
       if(evt.data[0]=='$')
         alert(evt.data);
@@ -565,6 +663,21 @@ function initselfWebSocket(){
   };
 }
 
+function pingSuperNodeForMessages(){
+  kBucketObj.determineClosestSupernode(selfID).then(result => {
+    var selfSuperNodeWS = new WebSocket("ws://"+contacts[result[0].floID].onionAddr+"/ws");
+    selfSuperNodeWS.onopen = function(evt){ 
+      var data = JSON.stringify({pingNewMsg:true,floID:selfID});
+      selfSuperNodeWS.send(data) 
+      console.log('Pinged selfSupernode for new messages')
+    };
+    selfSuperNodeWS.onerror = function(ev) { console.log('Unable to ping superNode for new messages'); };
+    selfSuperNodeWS.onclose = function(ev) { console.log('Connection with selfSupernode is closed') };
+  }).catch(err => {
+    console.log(err.message);
+  });
+}
+
 function checkStatusInterval(){
   try{
     if(receiverWebSocket !== undefined && receiverWebSocket.readyState !== WebSocket.OPEN){
@@ -574,14 +687,14 @@ function checkStatusInterval(){
       receiverWebSocket.onerror = function(ev) { receiverStatus(false); };
       receiverWebSocket.onclose = function(ev) { receiverStatus(false); };
       receiverWebSocket.onmessage = function(evt){ 
-      console.log(evt.data); 
-      if(evt.data[0]=='#'){
-        if (evt.data[1]=='+')
-          receiverStatus(true);
-        else if(evt.data[1]=='-')
-          receiverStatus(false);
+        console.log(evt.data); 
+        if(evt.data[0]=='#'){
+          if (evt.data[1]=='+')
+            receiverStatus(true);
+          else if(evt.data[1]=='-')
+            receiverStatus(false);
+        }
       }
-    }
     }    
   }catch(e){
     console.log(e);
@@ -596,6 +709,14 @@ function changeReceiver(param){
   document.getElementById('recipient-floID').innerHTML = receiverID;
   receiverStatus(false)
   document.getElementById(receiverID).style.display = 'block';
+
+  kBucketObj.determineClosestSupernode(receiverID).then(result => {
+    console.log(result)
+    receiverSuperNodeWS = new WebSocket("ws://"+contacts[result[0].floID].onionAddr+"/ws");
+  }).catch(e => {
+    console.log(e)
+  });
+
   try{
     if(receiverWebSocket !== undefined && receiverWebSocket.readyState === WebSocket.OPEN)
       receiverWebSocket.close()
@@ -643,20 +764,23 @@ function sendMsg(){
     alert("Select a contact and send message");
     return;
   }
-  if(!recStat){
-    alert("Recipient is offline! Try again later")
-    return
-  }
+
   var inp = document.getElementById('sendMsgInput')
   var msg = inp.value;
   inp.value = "";
   console.log(msg);
+  var time = Date.now();
   var sign = encrypt.sign(msg,privKey)
   var msgEncrypt = encrypt.encryptMessage(msg,contacts[receiverID].pubKey)
-  var data = JSON.stringify({from:senderID,secret:msgEncrypt.secret,sign:sign,pubVal:msgEncrypt.senderPublicKeyString});
-  receiverWebSocket.send(data);
+  var data = JSON.stringify({from:selfID,to:receiverID,time:time,secret:msgEncrypt.secret,sign:sign,pubVal:msgEncrypt.senderPublicKeyString});
+  
+  if(recStat){
+    receiverWebSocket.send(data);
+  }else{
+    receiverSuperNodeWS.send(data);
+  }
+  
   console.log(`sentMsg : ${data}`);
-      time = Date.now();
       var disp = document.getElementById(receiverID);
       var msgdiv = document.createElement('div');
       msgdiv.setAttribute("class", "row message-body");
@@ -671,4 +795,39 @@ function sendMsg(){
             </div>`;
       disp.appendChild(msgdiv);
       storeMsg({time:time,floID:receiverID,text:msg,type:"S"});
+}
+
+function sendStoredSuperNodeMsgs(floID){
+  var receiverWS = new WebSocket("ws://"+contacts[floID].onionAddr+"/ws");
+  receiverWS.onopen = function(ev){ 
+    var idb = indexedDB.open("FLO_Chat",2);
+    idb.onerror = function(event) {
+      console.log("Error in opening IndexedDB!");
+    };
+    idb.onupgradeneeded = function(event) {
+      var objectStore = event.target.result.createObjectStore("superNodeMsg",{ keyPath: 'id' });
+      objectStore.createIndex('from', 'from', { unique: false });
+      objectStore.createIndex('to', 'to', { unique: false });
+      objectStore.createIndex('data', 'data', { unique: false });
+    };
+    idb.onsuccess = function(event) {
+      var db = event.target.result;
+      var obs = db.transaction("superNodeMsg", "readwrite").objectStore("superNodeMsg");
+      obs.openCursor().onsuccess = function(event) {
+        var cursor = event.target.result;
+        if(cursor) {
+          if(cursor.value.to == floID){
+            receiverWS.send(cursor.value.data);
+            cursor.delete();
+          }
+          cursor.continue();
+        }else{
+          console.log('Sent All messages to '+floID)
+        }
+      }
+      db.close();
+    };
+  };
+  receiverWS.onerror = function(ev) { console.log('Connection Error to '+floID) };
+  receiverWS.onclose = function(ev) { console.log('Disconnected from '+floID) };
 }
