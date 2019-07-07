@@ -115,8 +115,8 @@ int main(int argc, char** argv) {
 
   nc = mg_bind(&mgr, s_http_port, ev_handler);
   mg_set_protocol_http_websocket(nc);
-  s_http_server_opts.document_root = ".";  // Serve current directory
-  s_http_server_opts.enable_directory_listing = "yes";
+  s_http_server_opts.document_root = "app";  // Serve current directory
+  s_http_server_opts.enable_directory_listing = "no";
 
   printf("Started on port %s\n", s_http_port);
   while (s_signal_received == 0) {
