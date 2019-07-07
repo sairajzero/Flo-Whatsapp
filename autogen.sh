@@ -18,7 +18,7 @@ echo "----------Configuring Tor for FLO-Whatsapp----------"
 echo $PWD
 cat <<EOT >> /etc/tor/torrc
 HiddenServiceDir $PWD/.hidden_service/
-HiddenServicePort 8000 127.0.0.1:8000
+HiddenServicePort 3579 127.0.0.1:3579
 EOT
 chmod 700 $PWD
 echo "----------Finished Configuring----------"
@@ -33,7 +33,7 @@ app/websocket_chat \$1 &
 tor &
 sleep 5s
 OA=\$(cat .hidden_service/hostname)
-zenity --info --text="Open link '\$OA:8000' in onion browser"
+zenity --info --text="Open link '\$OA:3579' in onion browser"
 wait
 EOF
 chmod +x start
