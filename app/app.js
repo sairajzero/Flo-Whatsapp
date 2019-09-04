@@ -7,17 +7,17 @@ if (!window.indexedDB) {
      window.alert("Your browser doesn't support a stable version of IndexedDB.")
 }
 
-var contacts = [];
-var receiverID,selfID,recStat;
+var contacts = [], groups = [];
+var receiverID,selfID,recStat,modSuperNode, msgType;
 var selfwebsocket,receiverWebSocket,receiverSuperNodeWS;
 var privKey;
 
-var encrypt = {
+var floOpt = {
 
             p: BigInteger("FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEFFFFFC2F", 16),
 
             exponent1: function () {
-                return encrypt.p.add(BigInteger.ONE).divide(BigInteger("4"))
+                return floOpt.p.add(BigInteger.ONE).divide(BigInteger("4"))
             },
 
             calculateY: function (x) {
@@ -105,7 +105,7 @@ var encrypt = {
                 }
             },
 
-            encryptMessage: function (data, receiverCompressedPublicKey) {
+            encryptData: function (data, receiverCompressedPublicKey) {
                 var senderECKeyData = this.getSenderPublicKeyString();
                 var senderDerivedKey = {
                     XValue: "",
@@ -123,13 +123,12 @@ var encrypt = {
                 };
             },
 
-            decryptMessage: function (secret, senderPublicKeyString) {
+            decryptData: function (secret, senderPublicKeyString,myPrivateKey) {
                 var receiverDerivedKey = {
                     XValue: "",
                     YValue: ""
                 };
                 var receiverECKeyData = {};
-                var myPrivateKey = privKey;
                 if (typeof myPrivateKey !== "string") throw new Error("No private key found.");
 
                 let privateKey = this.wifToDecimal(myPrivateKey, true);
@@ -162,7 +161,7 @@ var encrypt = {
           var floID = key.getBitcoinAddress();
           return floID;
         },
-        sign: function (msg, privateKeyHex) {
+        signData: function (msg, privateKeyHex) {
             var key = new Bitcoin.ECKey(privateKeyHex);
             key.setCompressed(true);
 
@@ -176,7 +175,7 @@ var encrypt = {
             var sighex = Crypto.util.bytesToHex(messageSign);
             return sighex;
         },
-        verify: function (msg, signatureHex, publicKeyHex) {
+        verifyData: function (msg, signatureHex, publicKeyHex) {
             var msgHash = Crypto.SHA256(msg);
             var messageHashBigInteger = new BigInteger(msgHash);
 
@@ -202,8 +201,108 @@ var encrypt = {
                     privateKeyDecimal: privateKeyDecimal,
                     privateKeyHex: privateKeyHex
                 }
-            }
+        },
+        genNewIDpair: function(){
+          try {
+            var key = new Bitcoin.ECKey(false);
+            key.setCompressed(true);
+            return {floID:key.getBitcoinAddress(),pubKey:key.getPubKeyHex(),privKey:key.getBitcoinWalletImportFormat()}
+          }
+          catch (e) {
+            console.log(e);
+          }
       }
+  }
+//Script for AJAX, and register functions
+function ajax(method, uri){
+  var request = new XMLHttpRequest();
+  var url = `${server}/${uri}`
+  console.log(url)
+  var result;
+  request.open(method,url , false);
+  request.onload = function () {
+    if (request.readyState == 4 && request.status == 200)
+      result = this.response;
+    else {
+      console.log('error');
+      result = false;
+    }
+  };
+  request.send();
+  console.log(result);
+  return result;
+}
+    
+
+function registerID(sender,onionAddr,wif,pubkey,username) {
+    
+    var receiver = adminID;  
+
+    var trx = bitjs.transaction();
+    var utxoAmt = 0.0;
+    var x = sendAmt+fee;
+    var response = ajax("GET",`api/addr/${sender}/utxo`);
+    var utxos = JSON.parse(response);
+    for(var x = utxos.length-1; x >= 0; x--){
+        if(utxoAmt < sendAmt+fee){
+            trx.addinput(utxos[x].txid, utxos[x].vout, utxos[x].scriptPubKey);
+            utxoAmt += utxos[x].amount;
+        }else
+            break;
+    }
+    console.log(utxoAmt+":"+(sendAmt+fee));
+    if(utxoAmt < sendAmt+fee){
+        alert("Insufficient balance!");
+        return;
+    }
+    
+    trx.addoutput(receiver, sendAmt);
+    console.log(receiver+":"+ sendAmt);
+    
+    var change = utxoAmt-sendAmt-fee;
+    if(change>0)
+        trx.addoutput(sender, change);
+    console.log(sender+":"+ change);
+    var key = new Bitcoin.ECKey(wif);
+    var sendFloData = JSON.stringify({FLO_chat:{onionAddr:onionAddr, name: username, pubKey: pubkey}});;
+    trx.addflodata(sendFloData);
+    console.log(sendFloData);
+    
+    var signedTxHash = trx.sign(wif, 1);
+    console.log(signedTxHash);
+    return broadcastTx(signedTxHash);
+}
+    function broadcastTx(signedTxHash) {
+        var http = new XMLHttpRequest();
+        var url = `${server}/api/tx/send`;
+        if (signedTxHash.length < 1) {
+            alert("Empty Signature");
+            return false;
+        }
+        
+        var params = `{"rawtx":"${signedTxHash}"}`;
+        var result;
+        http.open('POST', url, false);
+
+        //Send the proper header information along with the request
+        http.setRequestHeader('Content-type', 'application/json');
+
+        http.onreadystatechange = function () { //Call a function when the state changes.
+            if (http.readyState == 4 && http.status == 200) {
+                console.log(http.response);
+                var txid = JSON.parse(http.response).txid.result;
+                alert("Transaction successful! txid : " + txid);
+                result = true;
+
+            } else {
+                console.log(http.responseText);
+                result = false;
+            }
+        }
+        http.send(params);
+        return result;
+    }
+
 
 function convertStringToInt(string){
   return parseInt(string,10);
@@ -222,35 +321,45 @@ function userDataStartUp(){
     getDatafromAPI().then(function (result) {
       console.log(result);
       getContactsfromIDB().then(function(result){
-        contacts = arrayToObject(result);
-        console.log(contacts);
-        getSuperNodeListfromIDB().then(function(result){
-          console.log(result)
-          superNodeList = result;
-          kBucketObj.launchKBucket().then(function(result){
+        contacts = result;
+        getGroupsfromIDB().then(function(result){
+          groups = result;
+          console.log(groups);
+          getSuperNodeListfromIDB().then(function(result){
             console.log(result)
-            getuserID().then(function(result){
-              console.log(result);
-              selfID = result;
-              if(superNodeList.includes(selfID))
-                  modSuperNode = true;
-              alert(`${selfID}\nWelcome ${contacts[selfID].name}`)
-              readMsgfromIDB().then(function(result){
+            superNodeList = result;
+            kBucketObj.launchKBucket().then(function(result){
+              console.log(result)
+              getuserID().then(function(result){
                 console.log(result);
-                initselfWebSocket();
-                pingSuperNodeForMessages();
-                displayContacts();
-                const createClock = setInterval(checkStatusInterval, 30000);
-              }).catch(function(error){
-                console.log(error);
+                selfID = result;
+                if(superNodeList.includes(selfID))
+                    modSuperNode = true;
+                alert(`${selfID}\nWelcome ${contacts[selfID].name}`)
+                readMsgfromIDB().then(function(result){
+                  console.log(result);
+                  readGroupMsgfromIDB().then(function(result){
+                    console.log(result);
+                    initselfWebSocket();
+                    pingSuperNodeForMessages();
+                    displayContacts();
+                    const createClock = setInterval(checkStatusInterval, 30000);
+                  }).catch(function(error){
+                    console.log(error);
+                  });
+                }).catch(function(error){
+                  console.log(error);
+                });
+                //startChats();
+              }).catch(function (error) {
+              console.log(error.message);
               });
-              //startChats();
-            }).catch(function (error) {
+            }).catch(function(error){
+              console.log(error.message);
+            }); 
+          }).catch(function (error) {
             console.log(error.message);
-            });
-          }).catch(function(error){
-            console.log(error.message);
-          }); 
+          });
         }).catch(function (error) {
           console.log(error.message);
         });
@@ -262,13 +371,6 @@ function userDataStartUp(){
     });
 
 }
-    function arrayToObject(array){
-      obj = {};
-      array.forEach(element => {
-        obj[element.floID] = {onionAddr : element.onionAddr, name : element.name, pubKey : element.pubKey};
-      });
-      return obj;
-    }
 
     function storeContact(data){
       return new Promise(
@@ -326,22 +428,28 @@ function userDataStartUp(){
                 console.log("Error in opening IndexedDB!");
             };
             idb.onupgradeneeded = function(event) {
-                    var objectStore0 = event.target.result.createObjectStore("superNodes");
-                   var objectStore1 = event.target.result.createObjectStore("contacts",{ keyPath: 'floID' });
+                  var db = event.target.result;
+                    var objectStore0 = db.createObjectStore("superNodes");
+                   var objectStore1 = db.createObjectStore("contacts",{ keyPath: 'floID' });
                     objectStore1.createIndex('onionAddr', 'onionAddr', { unique: false });
                     objectStore1.createIndex('name', 'name', { unique: false });
                     objectStore1.createIndex('pubKey', 'pubKey', { unique: false });
-                   var objectStore2 = event.target.result.createObjectStore("lastTx");
-                   var objectStore3 = event.target.result.createObjectStore("messages",{ keyPath: 'time' });
+                   var objectStore2 = db.createObjectStore("lastTx");
+                   var objectStore3 = db.createObjectStore("messages",{ keyPath: 'time' });
                     objectStore3.createIndex('text', 'text', { unique: false });
                     objectStore3.createIndex('floID', 'floID', { unique: false });
                     objectStore3.createIndex('type', 'type', { unique: false });
+                    var objectStore4 = db.createObjectStore("groups",{ keyPath: 'groupID' });
+                    objectStore4.createIndex('groupInfo', 'groupInfo', { unique: false });
+                    var objectStore5 = db.createObjectStore("groupMsg",{ keyPath: 'time' });
+                    objectStore5.createIndex('text', 'text', { unique: false });
+                    objectStore5.createIndex('groupID', 'groupID', { unique: false });
+                    objectStore5.createIndex('type', 'type', { unique: false });
+                    objectStore5.createIndex('sender', 'sender', { unique: false });
             };
             idb.onsuccess = function(event) {
                var db = event.target.result;
-                //window["wait"] = addrList.length;
                var lastTx = db.transaction('lastTx', "readwrite").objectStore('lastTx');
-               //addrList.forEach(function(addr){
                   console.log(addr);
                   new Promise(function(res,rej){
                     var lastTxReq = lastTx.get(addr);
@@ -376,7 +484,7 @@ function userDataStartUp(){
                             }else{
                               var data = JSON.parse(tx.floData).FLO_chat;
                               if(data !== undefined){
-                                if(encrypt.getFLOIDfromPubkeyHex(data.pubKey)!=tx.vin[0].addr)
+                                if(floOpt.getFLOIDfromPubkeyHex(data.pubKey)!=tx.vin[0].addr)
                                   throw("PublicKey doesnot match with floID")
                                 data = {floID : tx.vin[0].addr, onionAddr : data.onionAddr, name : data.name, pubKey:data.pubKey};
                                 storeContact(data).then(function (response) {
@@ -394,7 +502,6 @@ function userDataStartUp(){
                         obs.put(response.totalItems,addr);
                           break;
                       }
-                      window["wait"]--;
                       db.close();
                       resolve('retrived data from API');
                   });                    
@@ -446,7 +553,38 @@ function getContactsfromIDB(){
         var obs = db.transaction("contacts", "readwrite").objectStore("contacts");
         var getReq = obs.getAll();
         getReq.onsuccess = function(event){
-          resolve(event.target.result);
+          var result = {}
+          event.target.result.forEach(c => {
+            result[c.floID] = c;
+          });
+          resolve(result);
+        }
+        getReq.onerror = function(event){
+          reject('Unable to read contacts!')
+        }
+        db.close();
+      };
+    }
+  );
+}
+
+function getGroupsfromIDB(){
+  return new Promise(
+    function(resolve,reject){
+      var idb = indexedDB.open("FLO_Chat");
+      idb.onerror = function(event) {
+         reject("Error in opening IndexedDB!");
+      };
+      idb.onsuccess = function(event) {
+        var db = event.target.result;
+        var obs = db.transaction("groups", "readwrite").objectStore("groups");
+        var getReq = obs.getAll();
+        getReq.onsuccess = function(event){
+          var result = {}
+          event.target.result.forEach(g => {
+            result[g.groupID] = JSON.parse(g.groupInfo);
+          });
+          resolve(result);
         }
         getReq.onerror = function(event){
           reject('Unable to read contacts!')
@@ -533,8 +671,72 @@ function readMsgfromIDB(){
 
             cursor.continue();
           } else {
-            console.log('Entries all displayed.');
             resolve("Read Msg from IDB");
+          }
+        };
+        db.close();
+      };
+    }
+  );
+}
+
+function readGroupMsgfromIDB(){
+  return new Promise(
+    function(resolve,reject){
+      var disp = document.getElementById("conversation");
+      for(floID in groups){
+        var createLi = document.createElement('div');
+        createLi.setAttribute("id", floID);
+        createLi.setAttribute("class", "message-inner");
+        createLi.style.display = 'none';
+        disp.appendChild(createLi);
+      }
+      var idb = indexedDB.open("FLO_Chat");
+      idb.onerror = function(event) {
+        reject("Error in opening IndexedDB!");
+      };
+      idb.onsuccess = function(event) {
+        var db = event.target.result;
+        var obs = db.transaction("groupMsg", "readwrite").objectStore("groupMsg");
+        obs.openCursor().onsuccess = function(event) {
+          var cursor = event.target.result;
+          if(cursor) {
+            var chat = document.getElementById(cursor.value.groupID);
+            if(cursor.value.type == "R"){
+              var msgdiv = document.createElement('div');
+              msgdiv.setAttribute("class", "row message-body");
+              msgdiv.innerHTML = `<div class="col-sm-12 message-main-receiver">
+                      <div class="receiver">
+                        <span class="message-text">
+                        <b>${cursor.value.sender}</b>
+                        <br/>${cursor.value.text}
+                        </span>
+                        <span class="message-time pull-right">
+                          ${getTime(cursor.value.time)}
+                        </span>
+                      </div>
+                    </div>`;
+              chat.appendChild(msgdiv);
+            }else if(cursor.value.type == "S"){
+              var msgdiv = document.createElement('div');
+              msgdiv.setAttribute("class", "row message-body");
+              msgdiv.innerHTML = `<div class="col-sm-12 message-main-sender">
+                      <div class="sender">
+                        <span class="message-text">
+                        <b>${cursor.value.sender}</b>
+                        <br/>${cursor.value.text}
+                        </span>
+                        <span class="message-time pull-right">
+                          ${getTime(cursor.value.time)}
+                        </span>
+                      </div>
+                    </div>`;
+              chat.appendChild(msgdiv);
+            }
+
+            cursor.continue();
+          } else {
+            resolve("Read Group Msgs from IDB");
           }
         };
         db.close();
@@ -551,6 +753,19 @@ function storeMsg(data){
   idb.onsuccess = function(event) {
     var db = event.target.result;
     var obs = db.transaction("messages", "readwrite").objectStore("messages");
+    obs.add(data);
+    db.close();
+  };
+}
+
+function storeGroupMsg(data){
+  var idb = indexedDB.open("FLO_Chat");
+  idb.onerror = function(event) {
+    console.log("Error in opening IndexedDB!");
+  };
+  idb.onsuccess = function(event) {
+    var db = event.target.result;
+    var obs = db.transaction("groupMsg", "readwrite").objectStore("groupMsg");
     obs.add(data);
     db.close();
   };
@@ -587,13 +802,24 @@ function displayContacts(){
     createLi.setAttribute("class", "row sideBar-body");
     createLi.innerHTML = `<div class="col-sm-11 col-xs-11 sideBar-main">
                 <div class="row">
-                  <div class="col-sm-8 col-xs-8 sideBar-name">
-                    <span class="name-meta">${floID}
-                  </span>
+                  <div class="col-sm-12 col-xs-12 sideBar-name">
+                    <span class="name-meta">${contacts[floID].name}</span><br/>
+                    <span class="time-meta">@${floID}</span>
                   </div>
-                  <div class="col-sm-4 col-xs-4 pull-right sideBar-time">
-                    <span class="time-meta pull-right">${contacts[floID].name}
-                  </span>
+                </div>
+              </div>`
+    listElement.appendChild(createLi);
+  }
+  for(floID in groups){
+    var createLi = document.createElement('div');
+    createLi.setAttribute("name", floID);
+    createLi.setAttribute("onClick", 'changeReceiver(this)');
+    createLi.setAttribute("class", "row sideBar-body");
+    createLi.innerHTML = `<div class="col-sm-11 col-xs-11 sideBar-main">
+                <div class="row">
+                  <div class="col-sm-12 col-xs-12 sideBar-name">
+                    <span class="name-meta">${groups[floID].name}</span><br/>
+                    <span class="time-meta">#${floID}</span>
                   </div>
                 </div>
               </div>`
@@ -617,30 +843,58 @@ function initselfWebSocket(){
       var data = JSON.parse(evt.data);
       if(data.to == selfID){
         console.log('Incoming self')
-        var msg = encrypt.decryptMessage(data.secret,data.pubVal)
-        if(!encrypt.verify(msg,data.sign,contacts[data.from].pubKey))
-          return
-        var time = Date.now();
-        var disp = document.getElementById(data.from);
-        var msgdiv = document.createElement('div');
-        msgdiv.setAttribute("class", "row message-body");
-        msgdiv.innerHTML = `<div class="col-sm-12 message-main-receiver">
-                <div class="receiver">
-                  <span class="message-text">
-                  ${msg}
-                  </span>
-                  <span class="message-time pull-right">
-                    ${getTime(time)}
-                  </span>
-                </div>
-              </div>`;
-        disp.appendChild(msgdiv);
-        storeMsg({time:time,floID:data.from,text:msg,type:"R"});
+        if(data.group === undefined){
+          var msg = floOpt.decryptData(data.secret,data.pubVal,privKey)
+          if(!floOpt.verifyData(msg,data.sign,contacts[data.from].pubKey))
+            return
+          var time = Date.now();
+          var disp = document.getElementById(data.from);
+          var msgdiv = document.createElement('div');
+          msgdiv.setAttribute("class", "row message-body");
+          msgdiv.innerHTML = `<div class="col-sm-12 message-main-receiver">
+                  <div class="receiver">
+                    <span class="message-text">
+                    ${msg}
+                    </span>
+                    <span class="message-time pull-right">
+                      ${getTime(time)}
+                    </span>
+                  </div>
+                </div>`;
+          disp.appendChild(msgdiv);
+          storeMsg({time:time,floID:data.from,text:msg,type:"R"});
+        }else if(data.group in groups && groups[data.group].members.includes(data.from)){
+          var msg = floOpt.decryptData(data.secret,data.pubVal,groups[data.group].privKey);
+          if(!floOpt.verifyData(msg,data.sign,contacts[data.from].pubKey))
+            return
+          var time = Date.now();
+          var disp = document.getElementById(data.group);
+          var msgdiv = document.createElement('div');
+          msgdiv.setAttribute("class", "row message-body");
+          msgdiv.innerHTML = `<div class="col-sm-12 message-main-receiver">
+                  <div class="receiver">
+                    <span class="message-text">
+                    <b>${data.from}</b>
+                    <br/>${msg}
+                    </span>
+                    <span class="message-time pull-right">
+                      ${getTime(time)}
+                    </span>
+                  </div>
+                </div>`;
+          disp.appendChild(msgdiv);
+          storeGroupMsg({time:time,groupID:data.group,sender:data.from,text:msg,type:"R"});
+        }
+      }else if(data.newGroup){
+        var groupInfoStr = floOpt.decryptData(data.groupInfo.secret,data.groupInfo.senderPublicKeyString,privKey)
+        var groupInfo = JSON.parse(groupInfoStr);
+        if(floOpt.verifyData(groupInfoStr,data.sign,contacts[groupInfo.creator].pubKey)){
+          storeGroup(groupInfoStr,groupInfo.floID);
+          createGroupDisplay(groupInfo);
+        }
       }else if(modSuperNode){
-
         if(data.pingNewMsg)
           sendStoredSuperNodeMsgs(data.floID)
-
         else{
           kBucketObj.determineClosestSupernode(data.to).then(result=>{
             console.log(result)
@@ -710,31 +964,38 @@ function changeReceiver(param){
   receiverStatus(false)
   document.getElementById(receiverID).style.display = 'block';
 
-  kBucketObj.determineClosestSupernode(receiverID).then(result => {
-    console.log(result)
-    receiverSuperNodeWS = new WebSocket("ws://"+contacts[result[0].floID].onionAddr+"/ws");
-  }).catch(e => {
-    console.log(e)
-  });
+  if(receiverID in contacts){
+    msgType = 'direct';
+    kBucketObj.determineClosestSupernode(receiverID).then(result => {
+      receiverSuperNodeWS = new WebSocket("ws://"+contacts[result[0].floID].onionAddr+"/ws");
+    }).catch(e => {
+      console.log(e)
+    });
 
-  try{
-    if(receiverWebSocket !== undefined && receiverWebSocket.readyState === WebSocket.OPEN)
-      receiverWebSocket.close()
-    receiverWebSocket = new WebSocket("ws://"+contacts[receiverID].onionAddr+"/ws");
-    receiverWebSocket.onopen = function(ev){ receiverWebSocket.send('#'); };
-    receiverWebSocket.onerror = function(ev) { receiverStatus(false); };
-    receiverWebSocket.onclose = function(ev) { receiverStatus(false); };
-    receiverWebSocket.onmessage = function(evt){ 
-      console.log(evt.data); 
-      if(evt.data[0]=='#'){
-        if (evt.data[1]=='+')
-          receiverStatus(true);
-        else if(evt.data[1]=='-')
-          receiverStatus(false);
+    try{
+      if(receiverWebSocket !== undefined && receiverWebSocket.readyState === WebSocket.OPEN)
+        receiverWebSocket.close()
+      receiverWebSocket = new WebSocket("ws://"+contacts[receiverID].onionAddr+"/ws");
+      receiverWebSocket.onopen = function(ev){ receiverWebSocket.send('#'); };
+      receiverWebSocket.onerror = function(ev) { receiverStatus(false); };
+      receiverWebSocket.onclose = function(ev) { receiverStatus(false); };
+      receiverWebSocket.onmessage = function(evt){ 
+        console.log(evt.data); 
+        if(evt.data[0]=='#'){
+          if (evt.data[1]=='+')
+            receiverStatus(true);
+          else if(evt.data[1]=='-')
+            receiverStatus(false);
+        }
       }
+    }catch(e){
+      console.log(e);
     }
-  }catch(e){
-    console.log(e);
+  } else if (receiverID in groups){
+    msgType = 'group';
+    if(receiverWebSocket !== undefined && receiverWebSocket.readyState === WebSocket.OPEN)
+        receiverWebSocket.close()
+    receiverWebSocket = undefined;
   }
 }
 
@@ -764,14 +1025,18 @@ function sendMsg(){
     alert("Select a contact and send message");
     return;
   }
+  if(msgType === 'group'){
+    sendGroupMsg();
+    return;
+  }
 
   var inp = document.getElementById('sendMsgInput')
   var msg = inp.value;
   inp.value = "";
   console.log(msg);
   var time = Date.now();
-  var sign = encrypt.sign(msg,privKey)
-  var msgEncrypt = encrypt.encryptMessage(msg,contacts[receiverID].pubKey)
+  var sign = floOpt.signData(msg,privKey)
+  var msgEncrypt = floOpt.encryptData(msg,contacts[receiverID].pubKey)
   var data = JSON.stringify({from:selfID,to:receiverID,time:time,secret:msgEncrypt.secret,sign:sign,pubVal:msgEncrypt.senderPublicKeyString});
   
   if(recStat){
@@ -795,6 +1060,43 @@ function sendMsg(){
             </div>`;
       disp.appendChild(msgdiv);
       storeMsg({time:time,floID:receiverID,text:msg,type:"S"});
+}
+
+function sendGroupMsg(){
+
+  var inp = document.getElementById('sendMsgInput');
+  var msg = inp.value;
+  inp.value = "";
+  console.log(msg);
+  var time = Date.now();
+  var sign = floOpt.signData(msg,privKey)
+  var msgEncrypt = floOpt.encryptData(msg,groups[receiverID].pubKey)
+  var data = {from:selfID,group:receiverID,time:time,secret:msgEncrypt.secret,sign:sign,pubVal:msgEncrypt.senderPublicKeyString};
+  console.log(data);
+
+  groups[receiverID].members.forEach(floID => {
+    if(floID == selfID) //dont send to self
+      return;
+    data.to = floID;
+    sendData(floID,JSON.stringify(data));
+  });
+  
+      var disp = document.getElementById(receiverID);
+      var msgdiv = document.createElement('div');
+      msgdiv.setAttribute("class", "row message-body");
+      msgdiv.innerHTML = `<div class="col-sm-12 message-main-sender">
+              <div class="sender">
+                <span class="message-text">
+                  <b>${selfID}</b>
+                  <br/>${msg}
+                </span>
+                <span class="message-time pull-right">
+                  ${getTime(time)}
+                </span>
+              </div>
+            </div>`;
+      disp.appendChild(msgdiv);
+      storeGroupMsg({time:time,sender:selfID,groupID:receiverID,text:msg,type:"S"});
 }
 
 function sendStoredSuperNodeMsgs(floID){
@@ -831,3 +1133,94 @@ function sendStoredSuperNodeMsgs(floID){
   receiverWS.onerror = function(ev) { console.log('Connection Error to '+floID) };
   receiverWS.onclose = function(ev) { console.log('Disconnected from '+floID) };
 }
+
+function newGroup(){
+  var members = prompt("Enter Members FLO_ID : ");
+  var memList = members.split(',');
+  grpName = prompt("Enter Group Name : ");
+  createNewGroup(memList,grpName);
+}
+
+function createNewGroup(memList,grpName){
+  var grpInfo = floOpt.genNewIDpair();
+  grpInfo.name = grpName;
+  grpInfo.members = memList;
+  grpInfo.creator = selfID;
+  var grpInfoStr = JSON.stringify(grpInfo);
+  console.log(grpInfoStr);
+  grpInfo.members.forEach(floID => {
+    var data = JSON.stringify({newGroup:true,groupInfo:floOpt.encryptData(grpInfoStr,contacts[floID].pubKey),sign:floOpt.signData(grpInfoStr,privKey)});
+    sendData(floID,data);
+  });
+}
+
+async function sendData(floID,data){
+  try{
+    var recipientWS = new WebSocket("ws://"+contacts[floID].onionAddr+"/ws");
+    recipientWS.onopen = function(ev){ recipientWS.send('#'); };
+    recipientWS.onerror = function(ev) { sendDataToSuperNode(floID,data); };
+    recipientWS.onclose = function(ev) { console.log("Closed")};
+    recipientWS.onmessage = function(evt){ 
+      console.log(evt.data); 
+      if(evt.data[0]=='#'){
+        if (evt.data[1]=='+')
+          recipientWS.send(data);
+        else if(evt.data[1]=='-')
+          sendDataToSuperNode(floID,data);
+      }
+    }
+  }catch(e){
+    console.log(e);
+  }
+}
+
+function sendDataToSuperNode(floID,data){
+  kBucketObj.determineClosestSupernode(floID).then(result=>{
+    var superNodeWS = new WebSocket("ws://"+contacts[result[0].floID].onionAddr+"/ws");
+    superNodeWS.onopen = function(ev){ 
+        console.log(`Connected to ${floID}'s SuperNode!`);
+        superNodeWS.send(data);
+    };
+    superNodeWS.onerror = function(ev) {console.log(`${floID}'s SuperNode is offline!`);};
+    superNodeWS.onclose = function(ev) {console.log(`Disconnected from ${floID}'s SuperNode!`);};
+  }).catch(e => {
+    console.log(e.message);
+  }); 
+}
+
+function createGroupDisplay(groupInfo){
+  groups[groupInfo.floID] = groupInfo;
+  var createLi = document.createElement('div');
+  createLi.setAttribute("name", groupInfo.floID);
+  createLi.setAttribute("onClick", 'changeReceiver(this)');
+  createLi.setAttribute("class", "row sideBar-body");
+  createLi.innerHTML = `<div class="col-sm-11 col-xs-11 sideBar-main">
+              <div class="row">
+                <div class="col-sm-12 col-xs-12 sideBar-name">
+                  <span class="name-meta">${groupInfo.name}</span><br/>
+                  <span class="time-meta">#${groupInfo.floID}</span>
+                </div>
+              </div>
+            </div>`;
+  document.getElementById('contact-display').appendChild(createLi);
+
+  var createEl = document.createElement('div');
+  createEl.setAttribute("id", groupInfo.floID);
+  createEl.setAttribute("class", "message-inner");
+  createEl.style.display = 'none';
+  document.getElementById("conversation").appendChild(createEl);
+}
+
+function storeGroup(groupInfoStr,groupID){
+      var idb = indexedDB.open("FLO_Chat");
+      idb.onerror = function(event) {
+          console.log("Error in opening IndexedDB!");
+      };
+      idb.onsuccess = function(event) {
+          var db = event.target.result;
+          console.log(groupID,groupInfoStr);
+          var obs = db.transaction('groups', "readwrite").objectStore('groups');
+          obs.put({groupID:groupID,groupInfo:groupInfoStr});
+          db.close();
+      };
+ }

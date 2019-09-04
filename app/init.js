@@ -1,10 +1,10 @@
     
-const  crypto = "FLO"
+const  cryptocoin = "FLO"
     const mainnet = `https://flosight.duckdns.org`;
     const testnet = `https://testnet-flosight.duckdns.org`;
-if(crypto == "FLO")
+if(cryptocoin == "FLO")
   var server = mainnet;
-else if(crypto == "FLO_TEST")
+else if(cryptocoin == "FLO_TEST")
   var server = testnet;
 const adminID = "FRR3Zz5Nod6oZTHE18seMpMYLzuLGuBWz4";
 
@@ -5086,9 +5086,9 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 );
 //https://raw.github.com/bitcoinjs/bitcoinjs-lib/09e8c6e184d6501a0c2c59d73ca64db5c0d3eb95/src/address.js
 Bitcoin.Address = function (bytes) {
-    if(crypto == "FLO")
+    if(cryptocoin == "FLO")
         this.version = 0x23; // FLO mainnet public address
-    else if(crypto == "FLO_TEST")
+    else if(cryptocoin == "FLO_TEST")
         this.version = 0x73; // FLO testnet public address
     if ("string" == typeof bytes) {
         bytes = Bitcoin.Address.decodeString(bytes,this.version);
@@ -5524,8 +5524,8 @@ Bitcoin.ECKey = (function () {
             try{
 
             // This part is edited for FLO. FLO WIF are always compressed WIF. FLO WIF (private key) starts with R for mainnet and c for testnet.
-                if(((crypto == "FLO") && /^R[123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz]{51}$/.test(input)) ||
-                    ((crypto == "FLO_TEST") && /^c[123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz]{51}$/.test(input))) {
+                if(((cryptocoin == "FLO") && /^R[123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz]{51}$/.test(input)) ||
+                    ((cryptocoin == "FLO_TEST") && /^c[123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz]{51}$/.test(input))) {
                     bytes = ECKey.decodeCompressedWalletImportFormat(input);
                     this.compressed = true;
                 }else if (ECKey.isHexFormat(input)) {
@@ -5579,9 +5579,9 @@ Bitcoin.ECKey = (function () {
         }
     };
 
-    if(crypto == "FLO")
+    if(cryptocoin == "FLO")
         ECKey.privateKeyPrefix = 0xA3; //(Bitcoin mainnet 0x80    testnet 0xEF) (FLO mainnet 0xA3 163 D)
-    else if(crypto == "FLO_TEST")
+    else if(cryptocoin == "FLO_TEST")
         ECKey.privateKeyPrefix = 0xEF; //FLO testnet
 
     /**
@@ -6077,126 +6077,3 @@ Bitcoin.Util = {
             }
 
         })("secp256k1");
-
-
-//Script for AJAX, and register functions
-function ajax(method, uri){
-      var request = new XMLHttpRequest();
-      var url = `${server}/${uri}`
-      console.log(url)
-      var result;
-      request.open(method,url , false);
-      request.onload = function () {
-        if (request.readyState == 4 && request.status == 200)
-          result = this.response;
-        else {
-          console.log('error');
-          result = false;
-        }
-      };
-      request.send();
-      console.log(result);
-      return result;
-    }
-        
-        function validateAddr(inputtxt) {
-            try{
-                var addr = new Bitcoin.Address(inputtxt);
-                return true;
-
-            }catch{
-                return false;
-            }
-        }
-        
-        function verifyWIF(wif,addr){
-            try {
-                var key = new Bitcoin.ECKey(wif);
-                if(key.priv == null){
-                    return false;
-                }
-                key.setCompressed(true);
-                var bitcoinAddress = key.getBitcoinAddress();
-                if (addr == bitcoinAddress)
-                    return true;
-                else
-                    return false;
-            }
-            catch (e) {
-                // browser does not have sufficient JavaScript support to generate a bitcoin address
-                alert(e);
-                console.log("error");
-            }
-        }
-     
-    
-    
-function registerID(sender,onionAddr,wif,pubkey,username) {
-        
-        var receiver = adminID;  
-
-        var trx = bitjs.transaction();
-        var utxoAmt = 0.0;
-        var x = sendAmt+fee;
-        var response = ajax("GET",`api/addr/${sender}/utxo`);
-        var utxos = JSON.parse(response);
-        for(var x = utxos.length-1; x >= 0; x--){
-            if(utxoAmt < sendAmt+fee){
-                trx.addinput(utxos[x].txid, utxos[x].vout, utxos[x].scriptPubKey);
-                utxoAmt += utxos[x].amount;
-            }else
-                break;
-        }
-        console.log(utxoAmt+":"+(sendAmt+fee));
-        if(utxoAmt < sendAmt+fee){
-            alert("Insufficient balance!");
-            return;
-        }
-        
-        trx.addoutput(receiver, sendAmt);
-        console.log(receiver+":"+ sendAmt);
-        
-        var change = utxoAmt-sendAmt-fee;
-        if(change>0)
-            trx.addoutput(sender, change);
-        console.log(sender+":"+ change);
-        var key = new Bitcoin.ECKey(wif);
-        var sendFloData = JSON.stringify({FLO_chat:{onionAddr:onionAddr, name: username, pubKey: pubkey}});;
-        trx.addflodata(sendFloData);
-        console.log(sendFloData);
-        
-        var signedTxHash = trx.sign(wif, 1);
-        console.log(signedTxHash);
-        return broadcastTx(signedTxHash);
-    }
-        function broadcastTx(signedTxHash) {
-            var http = new XMLHttpRequest();
-            var url = `${server}/api/tx/send`;
-            if (signedTxHash.length < 1) {
-                alert("Empty Signature");
-                return false;
-            }
-            
-            var params = `{"rawtx":"${signedTxHash}"}`;
-            var result;
-            http.open('POST', url, false);
-
-            //Send the proper header information along with the request
-            http.setRequestHeader('Content-type', 'application/json');
-
-            http.onreadystatechange = function () { //Call a function when the state changes.
-                if (http.readyState == 4 && http.status == 200) {
-                    console.log(http.response);
-                    var txid = JSON.parse(http.response).txid.result;
-                    alert("Transaction successful! txid : " + txid);
-                    result = true;
-
-                } else {
-                    console.log(http.responseText);
-                    result = false;
-                }
-            }
-            http.send(params);
-            return result;
-        }
-    

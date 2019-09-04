@@ -9,14 +9,13 @@
   <!-- Font Awesome File -->
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css">
 
-  <script type="text/javascript" src="registerID.js"></script>
+  <script type="text/javascript" src="init.js"></script>
   <script type="text/javascript" src="kBucket.js"></script>
   <script type="text/javascript" src="app.js"></script>
 
 </head>
 
 <body onload = "userDataStartUp();">
-
   <div class="container app">
     <div class="row app-one">
 
@@ -24,16 +23,20 @@
         <div class="side-one">
           <!-- Heading -->
           <div class="row heading">
-            <h5><b>FLO Whatsapp </b></h5><h6><i>created by Ranchimall</i></h6>
+            <span class="name-meta"><b>FLO Whatsapp </b> </span>
             <!--
             <div class="col-sm-1 col-xs-1  heading-dot  pull-right">
               <i class="fa fa-ellipsis-v fa-2x  pull-right" aria-hidden="true" onclick="min();"></i>
             </div>
-            <div class="col-sm-2 col-xs-2 heading-compose  pull-right">
-              <i class="fa fa-comments fa-2x  pull-right" aria-hidden="true"></i>
-            </div>
+            
           -->
+          <div class="col-sm-2 col-xs-2 heading-compose  pull-right">
+              <i class="fa fa-comments fa-2x  pull-right" aria-hidden="true" onclick="newGroup();"></i>
+            </div>
+            <br/>
+            <span class="name-meta"><i>created by Ranchimall</i></span>
           </div>
+
           <!-- Heading End -->
 
           <!-- SearchBox -->
@@ -51,6 +54,10 @@
           <!-- Search Box End -->
           <!-- sideBar -->
           <div class="row sideBar" id="contact-display">
+            
+          </div>
+          <div class="row sideBar">
+            
           </div>
           <!-- Sidebar End -->
         </div>
