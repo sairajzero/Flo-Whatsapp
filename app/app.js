@@ -119,7 +119,7 @@ var floOpt = {
     let secret = Crypto.AES.encrypt(data, senderKey);
     return {
       secret: secret,
-      senderPublicKeyString: senderECKeyData.senderPublicKeyString
+      pubVal: senderECKeyData.senderPublicKeyString
     };
   },
 
@@ -223,7 +223,7 @@ function ajax(method, uri) {
   console.log(url)
   var result;
   request.open(method, url, false);
-  request.onload = () => {
+  request.onload = function () {
     if (request.readyState == 4 && request.status == 200)
       result = this.response;
     else {
@@ -235,7 +235,6 @@ function ajax(method, uri) {
   console.log(result);
   return result;
 }
-
 
 function registerID(sender, onionAddr, wif, pubkey, username) {
 
@@ -313,11 +312,6 @@ function broadcastTx(signedTxHash) {
   return result;
 }
 
-
-function convertStringToInt(string) {
-  return parseInt(string, 10);
-}
-
 function userDataStartUp() {
   console.log("StartUp");
 
@@ -332,26 +326,25 @@ function userDataStartUp() {
     console.log(result);
     getContactsfromIDB().then(result => {
       contacts = result;
-      getGroupsfromIDB().then(result => {
-        groups = result;
-        console.log(groups);
-        getSuperNodeListfromIDB().then(result => {
+      getSuperNodeListfromIDB().then(result => {
+        console.log(result)
+        superNodeList = result;
+        kBucketObj.launchKBucket().then(result => {
           console.log(result)
-          superNodeList = result;
-          kBucketObj.launchKBucket().then(result => {
-            console.log(result)
-            getuserID().then(result => {
-              console.log(result);
-              selfID = result;
-              if (superNodeList.includes(selfID))
-                modSuperNode = true;
-              alert(`${selfID}\nWelcome ${contacts[selfID].name}`)
+          getuserID().then(result => {
+            console.log(result);
+            selfID = result;
+            if (superNodeList.includes(selfID))
+              modSuperNode = true;
+            alert(`${selfID}\nWelcome ${contacts[selfID].name}`)
+            getGroupsfromIDB().then(result => {
+              groups = result;
               readMsgfromIDB().then(result => {
                 console.log(result);
                 readGroupMsgfromIDB().then(result => {
                   console.log(result);
                   initselfWebSocket();
-                  pingSuperNodeForMessages();
+                  pingSuperNodeForAwayMessages();
                   displayContacts();
                   const createClock = setInterval(checkStatusInterval, 30000);
                 }).catch(error => {
@@ -360,7 +353,6 @@ function userDataStartUp() {
               }).catch(error => {
                 console.log(error);
               });
-              //startChats();
             }).catch(error => {
               console.log(error.message);
             });
@@ -671,36 +663,7 @@ function readMsgfromIDB() {
       obs.openCursor().onsuccess = (event) => {
         var cursor = event.target.result;
         if (cursor) {
-          var chat = document.getElementById(cursor.value.floID);
-          if (cursor.value.type == "R") {
-            var msgdiv = document.createElement('div');
-            msgdiv.setAttribute("class", "row message-body");
-            msgdiv.innerHTML = `<div class="col-sm-12 message-main-receiver">
-                      <div class="receiver">
-                        <span class="message-text">
-                         ${cursor.value.text}
-                        </span>
-                        <span class="message-time pull-right">
-                          ${getTime(cursor.value.time)}
-                        </span>
-                      </div>
-                    </div>`;
-            chat.appendChild(msgdiv);
-          } else if (cursor.value.type == "S") {
-            var msgdiv = document.createElement('div');
-            msgdiv.setAttribute("class", "row message-body");
-            msgdiv.innerHTML = `<div class="col-sm-12 message-main-sender">
-                      <div class="sender">
-                        <span class="message-text">${cursor.value.text}
-                        </span>
-                        <span class="message-time pull-right">
-                          ${getTime(cursor.value.time)}
-                        </span>
-                      </div>
-                    </div>`;
-            chat.appendChild(msgdiv);
-          }
-
+          createMsgElement(cursor.value);
           cursor.continue();
         } else {
           resolve("Read Msg from IDB");
@@ -731,39 +694,7 @@ function readGroupMsgfromIDB() {
       obs.openCursor().onsuccess = (event) => {
         var cursor = event.target.result;
         if (cursor) {
-          var chat = document.getElementById(cursor.value.groupID);
-          if (cursor.value.type == "R") {
-            var msgdiv = document.createElement('div');
-            msgdiv.setAttribute("class", "row message-body");
-            msgdiv.innerHTML = `<div class="col-sm-12 message-main-receiver">
-                      <div class="receiver">
-                        <span class="message-text">
-                        <b>${cursor.value.sender}</b>
-                        <br/>${cursor.value.text}
-                        </span>
-                        <span class="message-time pull-right">
-                          ${getTime(cursor.value.time)}
-                        </span>
-                      </div>
-                    </div>`;
-            chat.appendChild(msgdiv);
-          } else if (cursor.value.type == "S") {
-            var msgdiv = document.createElement('div');
-            msgdiv.setAttribute("class", "row message-body");
-            msgdiv.innerHTML = `<div class="col-sm-12 message-main-sender">
-                      <div class="sender">
-                        <span class="message-text">
-                        <b>${cursor.value.sender}</b>
-                        <br/>${cursor.value.text}
-                        </span>
-                        <span class="message-time pull-right">
-                          ${getTime(cursor.value.time)}
-                        </span>
-                      </div>
-                    </div>`;
-            chat.appendChild(msgdiv);
-          }
-
+          createMsgElement(cursor.value);
           cursor.continue();
         } else {
           resolve("Read Group Msgs from IDB");
@@ -884,70 +815,11 @@ function initselfWebSocket() {
     try {
       var data = JSON.parse(evt.data);
       if (data.to == selfID) {
-        console.log('Incoming self')
-        if (data.group === undefined) {
-          var msg = floOpt.decryptData(data.secret, data.pubVal, privKey)
-          if (!floOpt.verifyData(msg, data.sign, contacts[data.from].pubKey))
-            return
-          var time = Date.now();
-          var disp = document.getElementById(data.from);
-          var msgdiv = document.createElement('div');
-          msgdiv.setAttribute("class", "row message-body");
-          msgdiv.innerHTML = `<div class="col-sm-12 message-main-receiver">
-                  <div class="receiver">
-                    <span class="message-text">
-                    ${msg}
-                    </span>
-                    <span class="message-time pull-right">
-                      ${getTime(time)}
-                    </span>
-                  </div>
-                </div>`;
-          disp.appendChild(msgdiv);
-          storeMsg({
-            time: time,
-            floID: data.from,
-            text: msg,
-            type: "R"
-          });
-        } else if (data.group in groups && groups[data.group].members.includes(data.from)) {
-          var msg = floOpt.decryptData(data.secret, data.pubVal, groups[data.group].privKey);
-          if (!floOpt.verifyData(msg, data.sign, contacts[data.from].pubKey))
-            return
-          var time = Date.now();
-          var disp = document.getElementById(data.group);
-          var msgdiv = document.createElement('div');
-          msgdiv.setAttribute("class", "row message-body");
-          msgdiv.innerHTML = `<div class="col-sm-12 message-main-receiver">
-                  <div class="receiver">
-                    <span class="message-text">
-                    <b>${data.from}</b>
-                    <br/>${msg}
-                    </span>
-                    <span class="message-time pull-right">
-                      ${getTime(time)}
-                    </span>
-                  </div>
-                </div>`;
-          disp.appendChild(msgdiv);
-          storeGroupMsg({
-            time: time,
-            groupID: data.group,
-            sender: data.from,
-            text: msg,
-            type: "R"
-          });
-        }
-      } else if (data.newGroup) {
-        var groupInfoStr = floOpt.decryptData(data.groupInfo.secret, data.groupInfo.senderPublicKeyString, privKey)
-        var groupInfo = JSON.parse(groupInfoStr);
-        if (floOpt.verifyData(groupInfoStr, data.sign, contacts[groupInfo.creator].pubKey)) {
-          storeGroup(groupInfoStr, groupInfo.floID);
-          createGroupDisplay(groupInfo);
-        }
+        console.log('Incoming data')
+        processIncomingData(data);
       } else if (modSuperNode) {
-        if (data.pingNewMsg)
-          sendStoredSuperNodeMsgs(data.floID)
+        if (data.pingAway !== undefined)
+          sendStoredSuperNodeMsgs(data.pingAway)
         else {
           kBucketObj.determineClosestSupernode(data.to).then(result => {
             console.log(result)
@@ -970,13 +842,100 @@ function initselfWebSocket() {
   };
 }
 
-function pingSuperNodeForMessages() {
+function processIncomingData(data) {
+  if (data.directMsg !== undefined) {
+    var msg = floOpt.decryptData(data.directMsg.msgCipher.secret, data.directMsg.msgCipher.pubVal, privKey)
+    if (!floOpt.verifyData(msg, data.directMsg.sign, contacts[data.from].pubKey))
+      return
+    var msgInfo = {
+      time: Date.now(),
+      floID: data.from,
+      text: msg,
+      type: "R"
+    }
+    createMsgElement(msgInfo);
+    storeGroupMsg(msgInfo);
+  } else if (data.groupMsg !== undefined && data.groupMsg.group in groups) {
+    if (!(groups[data.groupMsg.group].includes(data.from)))
+      return
+    var msg = floOpt.decryptData(data.groupMsg.msgCipher.secret, data.groupMsg.msgCipher.pubVal, groups[data.groupMsg.group].privKey);
+    if (!floOpt.verifyData(msg, data.groupMsg.sign, contacts[data.from].pubKey))
+      return
+    var msgInfo = {
+      time: Date.now(),
+      groupID: data.groupMsg.group,
+      sender: data.from,
+      text: msg,
+      type: "R"
+    }
+    createMsgElement(msgInfo);
+    storeGroupMsg(msgInfo);
+  } else if (data.newGroup !== undefined) {
+    var groupInfoStr = floOpt.decryptData(data.newGroup.groupInfo.secret, data.newGroup.groupInfo.pubVal, privKey)
+    var groupInfo = JSON.parse(groupInfoStr);
+    if (floOpt.verifyData(groupInfoStr, data.newGroup.sign, contacts[groupInfo.creator].pubKey)) {
+      storeGroup(groupInfoStr, groupInfo.floID);
+      createGroupDisplay(groupInfo);
+    }
+  } else if (data.deleteGroup !== undefined && data.deleteGroup.group in groups) {
+    if (data.from != groups[data.deleteGroup.group].creator)
+      return
+    if (floOpt.verifyData('deleteGroup:' + data.deleteGroup.group, data.deleteGroup.sign, contacts[data.from].pubKey)) {
+      //remove group
+    }
+  } else if (data.addGroupMembers !== undefined && data.addGroupMembers.group in groups) {
+    if (data.from != groups[data.addGroupMembers.group].creator)
+      return
+    if (floOpt.verifyData(data.addGroupMembers.members.join('|'), data.addGroupMembers.sign, contacts[data.from].pubKey)) {
+      group[data.addGroupMembers.group].members = group[data.addGroupMembers.group].members.concat(data.addGroupMembers.members);
+      var groupInfoStr = JSON.stringify(group[data.addGroupMembers.group]);
+      storeGroup(groupInfoStr, data.addGroupMembers.group);
+    }
+  } else if (data.rmGroupMembers !== undefined && data.rmGroupMembers.group in groups) {
+    if (data.from != groups[data.rmGroupMembers.group].creator)
+      return
+    if (floOpt.verifyData(data.rmGroupMembers.members.join('|'), data.rmGroupMembers.sign, contacts[data.from].pubKey)) {
+      groups[data.rmGroupMembers.group].members = groups[data.rmGroupMembers.group].members.filter(x => !data.rmGroupMembers.members.includes(x)); //remove member from group
+      var groupInfoStr = JSON.stringify(group[data.rmGroupMembers.group]);
+      storeGroup(groupInfoStr, data.rmGroupMembers.group);
+    }
+  }
+}
+
+
+function createMsgElement(msgInfo) {
+  const type = {
+    S: 'sender',
+    R: 'receiver'
+  };
+  if (msgInfo.groupID === undefined) {
+    var msgEl = document.getElementById(msgInfo.floID);
+    var msghd = '';
+  } else {
+    var disp = document.getElementById(msgInfo.groupID);
+    var msghd = `<b>${msgInfo.sender}</b>`;
+  }
+  var msgdiv = document.createElement('div');
+  msgdiv.setAttribute("class", "row message-body");
+  msgdiv.innerHTML = `<div class="col-sm-12 message-main-receiver">
+                  <div class="${type[msgInfo.type]}">
+                    <span class="message-text">
+                      ${msghd}<br/>${msgInfo.text}
+                    </span>
+                    <span class="message-time pull-right">
+                      ${getTime(msgInfo.time)}
+                    </span>
+                  </div>
+                </div>`;
+  msgEl.appendChild(msgdiv);
+}
+
+function pingSuperNodeForAwayMessages() {
   kBucketObj.determineClosestSupernode(selfID).then(result => {
     var selfSuperNodeWS = new WebSocket("ws://" + contacts[result[0].floID].onionAddr + "/ws");
     selfSuperNodeWS.onopen = (evt) => {
       var data = JSON.stringify({
-        pingNewMsg: true,
-        floID: selfID
+        pingAway: selfID
       });
       selfSuperNodeWS.send(data)
       console.log('Pinged selfSupernode for new messages')
@@ -1097,25 +1056,27 @@ function sendMsg() {
     alert("Select a contact and send message");
     return;
   }
-  if (msgType === 'group') {
-    sendGroupMsg();
-    return;
-  }
-
   var inp = document.getElementById('sendMsgInput')
   var msg = inp.value;
   inp.value = "";
   console.log(msg);
   var time = Date.now();
-  var sign = floOpt.signData(msg, privKey)
-  var msgEncrypt = floOpt.encryptData(msg, contacts[receiverID].pubKey)
+  var sign = floOpt.signData(msg, privKey);
+  if (msgType === 'direct')
+    sendDirectMsg(msg, time, sign);
+  else if (msgType === 'group')
+    sendGroupMsg(msg, time, sign);
+}
+
+function sendDirectMsg(msg, time, sign) {
   var data = JSON.stringify({
     from: selfID,
     to: receiverID,
-    time: time,
-    secret: msgEncrypt.secret,
-    sign: sign,
-    pubVal: msgEncrypt.senderPublicKeyString
+    directMsg: {
+      time: time,
+      msgCipher: floOpt.encryptData(msg, contacts[receiverID].pubKey),
+      sign: sign
+    }
   });
 
   if (recStat) {
@@ -1123,45 +1084,25 @@ function sendMsg() {
   } else {
     receiverSuperNodeWS.send(data);
   }
-
-  console.log(`sentMsg : ${data}`);
-  var disp = document.getElementById(receiverID);
-  var msgdiv = document.createElement('div');
-  msgdiv.setAttribute("class", "row message-body");
-  msgdiv.innerHTML = `<div class="col-sm-12 message-main-sender">
-              <div class="sender">
-                <span class="message-text">${msg}
-                </span>
-                <span class="message-time pull-right">
-                  ${getTime(time)}
-                </span>
-              </div>
-            </div>`;
-  disp.appendChild(msgdiv);
-  storeMsg({
+  var msgInfo = {
     time: time,
     floID: receiverID,
     text: msg,
     type: "S"
-  });
+  }
+  createMsgElement(msgInfo);
+  storeMsg(msgInfo);
 }
 
-function sendGroupMsg() {
-
-  var inp = document.getElementById('sendMsgInput');
-  var msg = inp.value;
-  inp.value = "";
-  console.log(msg);
-  var time = Date.now();
-  var sign = floOpt.signData(msg, privKey)
-  var msgEncrypt = floOpt.encryptData(msg, groups[receiverID].pubKey)
+function sendGroupMsg(msg, time, sign) {
   var data = {
     from: selfID,
-    group: receiverID,
-    time: time,
-    secret: msgEncrypt.secret,
-    sign: sign,
-    pubVal: msgEncrypt.senderPublicKeyString
+    groupMsg: {
+      group: receiverID,
+      time: time,
+      msgCipher: floOpt.encryptData(msg, groups[receiverID].pubKey),
+      sign: sign
+    }
   };
   console.log(data);
 
@@ -1171,29 +1112,15 @@ function sendGroupMsg() {
     data.to = floID;
     sendData(floID, JSON.stringify(data));
   });
-
-  var disp = document.getElementById(receiverID);
-  var msgdiv = document.createElement('div');
-  msgdiv.setAttribute("class", "row message-body");
-  msgdiv.innerHTML = `<div class="col-sm-12 message-main-sender">
-              <div class="sender">
-                <span class="message-text">
-                  <b>${selfID}</b>
-                  <br/>${msg}
-                </span>
-                <span class="message-time pull-right">
-                  ${getTime(time)}
-                </span>
-              </div>
-            </div>`;
-  disp.appendChild(msgdiv);
-  storeGroupMsg({
+  var msgInfo = {
     time: time,
     sender: selfID,
     groupID: receiverID,
     text: msg,
     type: "S"
-  });
+  }
+  createMsgElement(msgInfo);
+  storeGroupMsg(msgInfo);
 }
 
 function sendStoredSuperNodeMsgs(floID) {
@@ -1241,30 +1168,6 @@ function sendStoredSuperNodeMsgs(floID) {
   receiverWS.onclose = (ev) => {
     console.log('Disconnected from ' + floID)
   };
-}
-
-function newGroup() {
-  var members = prompt("Enter Members FLO_ID : ");
-  var memList = members.split(',');
-  grpName = prompt("Enter Group Name : ");
-  createNewGroup(memList, grpName);
-}
-
-function createNewGroup(memList, grpName) {
-  var grpInfo = floOpt.genNewIDpair();
-  grpInfo.name = grpName;
-  grpInfo.members = memList;
-  grpInfo.creator = selfID;
-  var grpInfoStr = JSON.stringify(grpInfo);
-  console.log(grpInfoStr);
-  grpInfo.members.forEach(floID => {
-    var data = JSON.stringify({
-      newGroup: true,
-      groupInfo: floOpt.encryptData(grpInfoStr, contacts[floID].pubKey),
-      sign: floOpt.signData(grpInfoStr, privKey)
-    });
-    sendData(floID, data);
-  });
 }
 
 async function sendData(floID, data) {
@@ -1349,4 +1252,110 @@ function storeGroup(groupInfoStr, groupID) {
     });
     db.close();
   };
+}
+
+function createGroup() {
+  var members = prompt("Enter Members FLO_ID : ");
+  var grpName = prompt("Enter Group Name : ");
+
+  var grpInfo = floOpt.genNewIDpair();
+  grpInfo.name = grpName;
+  grpInfo.members = members.split(',');
+  grpInfo.creator = selfID;
+  var grpInfoStr = JSON.stringify(grpInfo);
+  console.log(grpInfoStr);
+  var data = {
+    from: selfID,
+    newGroup: {
+      sign: floOpt.signData(grpInfoStr, privKey)
+    }
+  }
+  grpInfo.members.forEach(floID => {
+    data.to = floID;
+    data.newGroup.groupInfo = floOpt.encryptData(grpInfoStr, contacts[floID].pubKey),
+      sendData(floID, JSON.stringify(data));
+  });
+}
+
+function deleteGroup() {
+  var flag = confirm("Are you sure you want to delete this group?");
+  if (flag) {
+    var data = {
+      from: selfID,
+      deleteGroup: {
+        group: receiverID,
+        sign: floOpt.signData('deleteGroup:' + receiverID, privKey)
+      }
+    };
+    groups[receiverID].members.forEach(floID => {
+      data.to = floID;
+      sendData(floID, JSON.stringify(data));
+    });
+  }
+}
+
+function addGroupMembers() {
+  var newMembers = prompt("Enter new Members : ");
+  newMembers = newMembers.split(',');
+  var data1 = {
+    from: selfID,
+    addGroupMembers: {
+      group: receiverID,
+      members: newMembers,
+      sign: floOpt.signData(newMembers.join('|'), privKey)
+    }
+  }
+  groups[receiverID].members.forEach(floID => {
+    if (floID == selfID) //dont send to self
+      return;
+    data1.to = floID;
+    sendData(floID, JSON.stringify(data1));
+  });
+  groups[receiverID].members = groups[receiverID].members.concat(newMembers);
+  var grpInfoStr = JSON.stringify(groups[receiverID]);
+  console.log(grpInfoStr);
+  var data2 = {
+    from: selfID,
+    newGroup: {
+      sign: floOpt.signData(grpInfoStr, privKey)
+    }
+  }
+  newMembers.forEach(floID => {
+    data2.to = floID;
+    data2.newGroup.groupInfo = floOpt.encryptData(grpInfoStr, contacts[floID].pubKey),
+      sendData(floID, JSON.stringify(data2));
+  });
+  storeGroup(grpInfoStr, receiverID);
+}
+
+function rmGroupMembers() {
+  var rmMembers = prompt("Enter Members to remove : ");
+  rmMembers = rmMembers.split(',');
+  var data1 = {
+    from: selfID,
+    rmGroupMembers: {
+      group: receiverID,
+      members: rmMembers,
+      sign: floOpt.signData(rmMembers.join('|'), privKey)
+    }
+  }
+  groups[receiverID].members = groups[receiverID].members.filter(x => !rmMembers.includes(x)); //remove member from group
+  storeGroup(JSON.stringify(groups[receiverID]), receiverID);
+  groups[receiverID].members.forEach(floID => {
+    if (floID == selfID)
+      return;
+    data1.to = floID;
+    sendData(floID, JSON.stringify(data1));
+  });
+  var data2 = {
+    from: selfID,
+    deleteGroup: {
+      group: receiverID,
+      sign: floOpt.signData('deleteGroup:' + receiverID, privKey)
+    }
+  };
+  rmMembers.forEach(floID => {
+    data2.to = floID;
+    sendData(floID, JSON.stringify(data2));
+  });
 }
