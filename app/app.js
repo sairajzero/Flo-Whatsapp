@@ -6,8 +6,8 @@ if (!window.indexedDB) {
   window.alert("Your browser doesn't support a stable version of IndexedDB.")
 }
 
-var contacts = [],
-  groups = [];
+var contacts, groups;
+var searchIndex = new FlexSearch();
 var receiverID, selfID, recStat, modSuperNode, msgType;
 var selfwebsocket, receiverWebSocket, receiverSuperNodeWS;
 var privKey;
@@ -321,6 +321,7 @@ function userDataStartUp() {
       sendMsg();
     }
   });
+  document.getElementById("searchContact").addEventListener("input", searchContact, true);
 
   getDatafromAPI().then(result => {
     console.log(result);
@@ -586,6 +587,7 @@ function getContactsfromIDB() {
         var result = {}
         event.target.result.forEach(c => {
           result[c.floID] = c;
+          searchIndex.add(c.floID, c.name+' @'+ c.floID);
         });
         resolve(result);
       }
@@ -610,12 +612,14 @@ function getGroupsfromIDB() {
       getReq.onsuccess = (event) => {
         var result = {}
         event.target.result.forEach(g => {
-          result[g.groupID] = JSON.parse(g.groupInfo);
+          var gInfo = JSON.parse(g.groupInfo);
+          result[g.groupID] = gInfo;
+          searchIndex.add(g.groupID, gInfo.name+' #'+ gInfo.floID);
         });
         resolve(result);
       }
       getReq.onerror = (event) => {
-        reject('Unable to read contacts!')
+        reject('Unable to read groups!')
       }
       db.close();
     };
@@ -874,6 +878,8 @@ function processIncomingData(data) {
     var groupInfoStr = floOpt.decryptData(data.newGroup.groupInfo.secret, data.newGroup.groupInfo.pubVal, privKey)
     var groupInfo = JSON.parse(groupInfoStr);
     if (floOpt.verifyData(groupInfoStr, data.newGroup.sign, contacts[groupInfo.creator].pubKey)) {
+      groups[groupInfo.floID] = groupInfo;
+      searchIndex.add(groupInfo.floID, groupInfo.name+' #'+ groupInfo.floID);
       storeGroup(groupInfoStr, groupInfo.floID);
       createGroupDisplay(groupInfo);
     }
@@ -882,6 +888,7 @@ function processIncomingData(data) {
       return
     if (floOpt.verifyData('deleteGroup:' + data.deleteGroup.group, data.deleteGroup.sign, contacts[data.from].pubKey)) {
       delete groups[data.deleteGroup.group];
+      searchIndex.remove(data.deleteGroup.group);
       deleteGroupFromIDB(data.deleteGroup.group);
     }
   } else if (data.addGroupMembers !== undefined && data.addGroupMembers.group in groups) {
@@ -1231,7 +1238,6 @@ function sendDataToSuperNode(floID, data) {
 }
 
 function createGroupDisplay(groupInfo) {
-  groups[groupInfo.floID] = groupInfo;
   var createLi = document.createElement('div');
   createLi.setAttribute("name", groupInfo.floID);
   createLi.setAttribute("onClick", 'changeReceiver(this)');
@@ -1433,4 +1439,23 @@ function rmGroupAdmins() {
   groups[receiverID].admins = groups[receiverID].admins.filter(x => !rmAdmins.includes(x)); //remove admins
   var grpInfoStr = JSON.stringify(groups[receiverID]);
   storeGroup(grpInfoStr, receiverID);
+}
+
+function searchContact() {
+  try {
+    var searchKey = this.value;
+    if (!searchKey)
+      var searchResults = Array.from(contacts.keys()).concat(Array.from(groups.keys()));
+    else
+      var searchResults = searchIndex.search(searchKey);
+    var dispContacts = document.getElementById('contact-display');
+    dispContacts.children.forEach(child => {
+      if (searchResults.includes(child.getAttribute("name")))
+        child.style.display = 'block';
+      else
+        child.style.display = 'none';
+    })
+  } catch (e) {
+    console.log(e);
+  }
 }
