@@ -881,27 +881,43 @@ function processIncomingData(data) {
     if (data.from != groups[data.deleteGroup.group].creator)
       return
     if (floOpt.verifyData('deleteGroup:' + data.deleteGroup.group, data.deleteGroup.sign, contacts[data.from].pubKey)) {
-      //remove group
+      delete groups[data.deleteGroup.group];
+      deleteGroupFromIDB(data.deleteGroup.group);
     }
   } else if (data.addGroupMembers !== undefined && data.addGroupMembers.group in groups) {
-    if (data.from != groups[data.addGroupMembers.group].creator)
+    if (data.from != groups[data.addGroupMembers.group].creator && !groups[data.addGroupMembers.group].admins.includes(data.from))
       return
-    if (floOpt.verifyData(data.addGroupMembers.members.join('|'), data.addGroupMembers.sign, contacts[data.from].pubKey)) {
+    if (floOpt.verifyData('addGroupMembers:' + data.addGroupMembers.group + data.addGroupMembers.members.join('|'), data.addGroupMembers.sign, contacts[data.from].pubKey)) {
       group[data.addGroupMembers.group].members = group[data.addGroupMembers.group].members.concat(data.addGroupMembers.members);
       var groupInfoStr = JSON.stringify(group[data.addGroupMembers.group]);
       storeGroup(groupInfoStr, data.addGroupMembers.group);
     }
   } else if (data.rmGroupMembers !== undefined && data.rmGroupMembers.group in groups) {
-    if (data.from != groups[data.rmGroupMembers.group].creator)
+    if (data.from != groups[data.rmGroupMembers.group].creator && !groups[data.rmGroupMembers.group].admins.includes(data.from))
       return
-    if (floOpt.verifyData(data.rmGroupMembers.members.join('|'), data.rmGroupMembers.sign, contacts[data.from].pubKey)) {
+    if (floOpt.verifyData('rmGroupMembers:' + data.rmGroupMembers.group + data.rmGroupMembers.members.join('|'), data.rmGroupMembers.sign, contacts[data.from].pubKey)) {
       groups[data.rmGroupMembers.group].members = groups[data.rmGroupMembers.group].members.filter(x => !data.rmGroupMembers.members.includes(x)); //remove member from group
       var groupInfoStr = JSON.stringify(group[data.rmGroupMembers.group]);
       storeGroup(groupInfoStr, data.rmGroupMembers.group);
     }
+  } else if (data.addGroupAdmins !== undefined && data.addGroupAdmins.group in groups) {
+    if (data.from != groups[data.addGroupAdmins.group].creator)
+      return
+    if (floOpt.verifyData('addGroupAdmins:' + data.addGroupAdmins.group + data.addGroupAdmins.admins.join('|'), data.addGroupAdmins.sign, contacts[data.from].pubKey)) {
+      group[data.addGroupAdmins.group].admins = group[data.addGroupAdmins.group].admins.concat(data.addGroupAdmins.admins);
+      var groupInfoStr = JSON.stringify(group[data.addGroupAdmins.group]);
+      storeGroup(groupInfoStr, data.addGroupAdmins.group);
+    }
+  } else if (data.rmGroupAdmins !== undefined && data.rmGroupAdmins.group in groups) {
+    if (data.from != groups[data.rmGroupAdmins.group].creator)
+      return
+    if (floOpt.verifyData('rmGroupAdmins:' + data.rmGroupAdmins.group + data.rmGroupAdmins.admins.join('|'), data.rmGroupAdmins.sign, contacts[data.from].pubKey)) {
+      groups[data.rmGroupAdmins.group].admins = groups[data.rmGroupAdmins.group].admins.filter(x => !data.rmGroupAdmins.admins.includes(x)); //remove member from group
+      var groupInfoStr = JSON.stringify(group[data.rmGroupAdmins.group]);
+      storeGroup(groupInfoStr, data.rmGroupAdmins.group);
+    }
   }
 }
-
 
 function createMsgElement(msgInfo) {
   const type = {
@@ -1254,6 +1270,20 @@ function storeGroup(groupInfoStr, groupID) {
   };
 }
 
+function deleteGroupFromIDB(groupID) {
+  var idb = indexedDB.open("FLO_Chat");
+  idb.onerror = (event) => {
+    console.log("Error in opening IndexedDB!");
+  };
+  idb.onsuccess = (event) => {
+    var db = event.target.result;
+    console.log('Delete Group:', groupID);
+    var obs = db.transaction('groups', "readwrite").objectStore('groups');
+    obs.delete(groupID);
+    db.close();
+  };
+}
+
 function createGroup() {
   var members = prompt("Enter Members FLO_ID : ");
   var grpName = prompt("Enter Group Name : ");
@@ -1262,6 +1292,7 @@ function createGroup() {
   grpInfo.name = grpName;
   grpInfo.members = members.split(',');
   grpInfo.creator = selfID;
+  grpInfo.admins = [];
   var grpInfoStr = JSON.stringify(grpInfo);
   console.log(grpInfoStr);
   var data = {
@@ -1302,7 +1333,7 @@ function addGroupMembers() {
     addGroupMembers: {
       group: receiverID,
       members: newMembers,
-      sign: floOpt.signData(newMembers.join('|'), privKey)
+      sign: floOpt.signData('addGroupMembers:' + receiverID + newMembers.join('|'), privKey)
     }
   }
   groups[receiverID].members.forEach(floID => {
@@ -1336,7 +1367,7 @@ function rmGroupMembers() {
     rmGroupMembers: {
       group: receiverID,
       members: rmMembers,
-      sign: floOpt.signData(rmMembers.join('|'), privKey)
+      sign: floOpt.signData('rmGroupMembers:' + receiverID + rmMembers.join('|'), privKey)
     }
   }
   groups[receiverID].members = groups[receiverID].members.filter(x => !rmMembers.includes(x)); //remove member from group
@@ -1358,4 +1389,48 @@ function rmGroupMembers() {
     data2.to = floID;
     sendData(floID, JSON.stringify(data2));
   });
+}
+
+function addGroupAdmins() {
+  var newAdmins = prompt("Enter new Admins : ");
+  newAdmins = newAdmins.split(',');
+  var data = {
+    from: selfID,
+    addGroupAdmins: {
+      group: receiverID,
+      admins: newAdmins,
+      sign: floOpt.signData('addGroupAdmins:' + receiverID + newAdmins.join('|'), privKey)
+    }
+  }
+  groups[receiverID].members.forEach(floID => {
+    if (floID == selfID) //dont send to self
+      return;
+    data.to = floID;
+    sendData(floID, JSON.stringify(data));
+  });
+  groups[receiverID].admins = groups[receiverID].admins.concat(newAdmins);
+  var grpInfoStr = JSON.stringify(groups[receiverID]);
+  storeGroup(grpInfoStr, receiverID);
+}
+
+function rmGroupAdmins() {
+  var rmAdmins = prompt("Enter rmAdmins: ");
+  rmAdmins = rmAdmins.split(',');
+  var data = {
+    from: selfID,
+    rmGroupAdmins: {
+      group: receiverID,
+      admins: rmAdmins,
+      sign: floOpt.signData('rmGroupAdmins:' + receiverID + rmAdmins.join('|'), privKey)
+    }
+  }
+  groups[receiverID].members.forEach(floID => {
+    if (floID == selfID) //dont send to self
+      return;
+    data.to = floID;
+    sendData(floID, JSON.stringify(data));
+  });
+  groups[receiverID].admins = groups[receiverID].admins.filter(x => !rmAdmins.includes(x)); //remove admins
+  var grpInfoStr = JSON.stringify(groups[receiverID]);
+  storeGroup(grpInfoStr, receiverID);
 }
