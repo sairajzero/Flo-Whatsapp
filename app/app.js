@@ -9,7 +9,7 @@ if (!window.indexedDB) {
 var contacts, groups;
 var searchIndex = new FlexSearch();
 var receiverID, selfID, recStat, modSuperNode, msgType;
-var selfwebsocket, receiverWebSocket, receiverSuperNodeWS;
+var selfwebsocket, receiverWebSocket;
 var privKey;
 
 var floOpt = {
@@ -587,7 +587,7 @@ function getContactsfromIDB() {
         var result = {}
         event.target.result.forEach(c => {
           result[c.floID] = c;
-          searchIndex.add(c.floID, c.name+' @'+ c.floID);
+          searchIndex.add(c.floID, c.name + ' @' + c.floID);
         });
         resolve(result);
       }
@@ -614,7 +614,7 @@ function getGroupsfromIDB() {
         event.target.result.forEach(g => {
           var gInfo = JSON.parse(g.groupInfo);
           result[g.groupID] = gInfo;
-          searchIndex.add(g.groupID, gInfo.name+' #'+ gInfo.floID);
+          searchIndex.add(g.groupID, gInfo.name + ' #' + gInfo.floID);
         });
         resolve(result);
       }
@@ -860,7 +860,7 @@ function processIncomingData(data) {
     createMsgElement(msgInfo);
     storeGroupMsg(msgInfo);
   } else if (data.groupMsg !== undefined && data.groupMsg.group in groups) {
-    if (!(groups[data.groupMsg.group].includes(data.from)))
+    if (!(groups[data.groupMsg.group].members.includes(data.from)))
       return
     var msg = floOpt.decryptData(data.groupMsg.msgCipher.secret, data.groupMsg.msgCipher.pubVal, groups[data.groupMsg.group].privKey);
     if (!floOpt.verifyData(msg, data.groupMsg.sign, contacts[data.from].pubKey))
@@ -879,12 +879,12 @@ function processIncomingData(data) {
     var groupInfo = JSON.parse(groupInfoStr);
     if (floOpt.verifyData(groupInfoStr, data.newGroup.sign, contacts[groupInfo.creator].pubKey)) {
       groups[groupInfo.floID] = groupInfo;
-      searchIndex.add(groupInfo.floID, groupInfo.name+' #'+ groupInfo.floID);
+      searchIndex.add(groupInfo.floID, groupInfo.name + ' #' + groupInfo.floID);
       storeGroup(groupInfoStr, groupInfo.floID);
       createGroupDisplay(groupInfo);
     }
   } else if (data.deleteGroup !== undefined && data.deleteGroup.group in groups) {
-    if (data.from != groups[data.deleteGroup.group].creator)
+    if (data.from != groups[data.deleteGroup.group].creator && !groups[data.deleteGroup.group].admins.includes(data.from))
       return
     if (floOpt.verifyData('deleteGroup:' + data.deleteGroup.group, data.deleteGroup.sign, contacts[data.from].pubKey)) {
       delete groups[data.deleteGroup.group];
@@ -895,8 +895,8 @@ function processIncomingData(data) {
     if (data.from != groups[data.addGroupMembers.group].creator && !groups[data.addGroupMembers.group].admins.includes(data.from))
       return
     if (floOpt.verifyData('addGroupMembers:' + data.addGroupMembers.group + data.addGroupMembers.members.join('|'), data.addGroupMembers.sign, contacts[data.from].pubKey)) {
-      group[data.addGroupMembers.group].members = group[data.addGroupMembers.group].members.concat(data.addGroupMembers.members);
-      var groupInfoStr = JSON.stringify(group[data.addGroupMembers.group]);
+      groups[data.addGroupMembers.group].members = groups[data.addGroupMembers.group].members.concat(data.addGroupMembers.members);
+      var groupInfoStr = JSON.stringify(groups[data.addGroupMembers.group]);
       storeGroup(groupInfoStr, data.addGroupMembers.group);
     }
   } else if (data.rmGroupMembers !== undefined && data.rmGroupMembers.group in groups) {
@@ -904,15 +904,15 @@ function processIncomingData(data) {
       return
     if (floOpt.verifyData('rmGroupMembers:' + data.rmGroupMembers.group + data.rmGroupMembers.members.join('|'), data.rmGroupMembers.sign, contacts[data.from].pubKey)) {
       groups[data.rmGroupMembers.group].members = groups[data.rmGroupMembers.group].members.filter(x => !data.rmGroupMembers.members.includes(x)); //remove member from group
-      var groupInfoStr = JSON.stringify(group[data.rmGroupMembers.group]);
+      var groupInfoStr = JSON.stringify(groups[data.rmGroupMembers.group]);
       storeGroup(groupInfoStr, data.rmGroupMembers.group);
     }
   } else if (data.addGroupAdmins !== undefined && data.addGroupAdmins.group in groups) {
     if (data.from != groups[data.addGroupAdmins.group].creator)
       return
     if (floOpt.verifyData('addGroupAdmins:' + data.addGroupAdmins.group + data.addGroupAdmins.admins.join('|'), data.addGroupAdmins.sign, contacts[data.from].pubKey)) {
-      group[data.addGroupAdmins.group].admins = group[data.addGroupAdmins.group].admins.concat(data.addGroupAdmins.admins);
-      var groupInfoStr = JSON.stringify(group[data.addGroupAdmins.group]);
+      groups[data.addGroupAdmins.group].admins = groups[data.addGroupAdmins.group].admins.concat(data.addGroupAdmins.admins);
+      var groupInfoStr = JSON.stringify(groups[data.addGroupAdmins.group]);
       storeGroup(groupInfoStr, data.addGroupAdmins.group);
     }
   } else if (data.rmGroupAdmins !== undefined && data.rmGroupAdmins.group in groups) {
@@ -920,37 +920,43 @@ function processIncomingData(data) {
       return
     if (floOpt.verifyData('rmGroupAdmins:' + data.rmGroupAdmins.group + data.rmGroupAdmins.admins.join('|'), data.rmGroupAdmins.sign, contacts[data.from].pubKey)) {
       groups[data.rmGroupAdmins.group].admins = groups[data.rmGroupAdmins.group].admins.filter(x => !data.rmGroupAdmins.admins.includes(x)); //remove member from group
-      var groupInfoStr = JSON.stringify(group[data.rmGroupAdmins.group]);
+      var groupInfoStr = JSON.stringify(groups[data.rmGroupAdmins.group]);
       storeGroup(groupInfoStr, data.rmGroupAdmins.group);
     }
   }
 }
 
 function createMsgElement(msgInfo) {
-  const type = {
-    S: 'sender',
-    R: 'receiver'
-  };
-  if (msgInfo.groupID === undefined) {
-    var msgEl = document.getElementById(msgInfo.floID);
-    var msghd = '';
-  } else {
-    var disp = document.getElementById(msgInfo.groupID);
-    var msghd = `<b>${msgInfo.sender}</b>`;
+  try {
+    const type = {
+      S: 'sender',
+      R: 'receiver'
+    };
+    if (!msgInfo.groupID) {
+      var msgEl = document.getElementById(msgInfo.floID);
+      var msghd = '';
+    } else {
+      var msgEl = document.getElementById(msgInfo.groupID);
+      var msghd = `<b>${msgInfo.sender}</b>`;
+    }
+    if (!msgEl)
+      return;
+    var msgdiv = document.createElement('div');
+    msgdiv.setAttribute("class", "row message-body");
+    msgdiv.innerHTML = `<div class="col-sm-12 message-main-${type[msgInfo.type]}">
+                    <div class="${type[msgInfo.type]}">
+                      <span class="message-text">
+                        ${msghd}<br/>${msgInfo.text}
+                      </span>
+                      <span class="message-time pull-right">
+                        ${getTime(msgInfo.time)}
+                      </span>
+                    </div>
+                  </div>`;
+    msgEl.appendChild(msgdiv);
+  } catch (e) {
+    console.log(e);
   }
-  var msgdiv = document.createElement('div');
-  msgdiv.setAttribute("class", "row message-body");
-  msgdiv.innerHTML = `<div class="col-sm-12 message-main-receiver">
-                  <div class="${type[msgInfo.type]}">
-                    <span class="message-text">
-                      ${msghd}<br/>${msgInfo.text}
-                    </span>
-                    <span class="message-time pull-right">
-                      ${getTime(msgInfo.time)}
-                    </span>
-                  </div>
-                </div>`;
-  msgEl.appendChild(msgdiv);
 }
 
 function pingSuperNodeForAwayMessages() {
@@ -1014,11 +1020,6 @@ function changeReceiver(param) {
 
   if (receiverID in contacts) {
     msgType = 'direct';
-    kBucketObj.determineClosestSupernode(receiverID).then(result => {
-      receiverSuperNodeWS = new WebSocket("ws://" + contacts[result[0].floID].onionAddr + "/ws");
-    }).catch(e => {
-      console.log(e)
-    });
 
     try {
       if (receiverWebSocket !== undefined && receiverWebSocket.readyState === WebSocket.OPEN)
@@ -1101,12 +1102,11 @@ function sendDirectMsg(msg, time, sign) {
       sign: sign
     }
   });
-
-  if (recStat) {
+  if (recStat)
     receiverWebSocket.send(data);
-  } else {
-    receiverSuperNodeWS.send(data);
-  }
+  else
+    sendDataToSuperNode(receiverID, data);
+
   var msgInfo = {
     time: time,
     floID: receiverID,
@@ -1445,16 +1445,16 @@ function searchContact() {
   try {
     var searchKey = this.value;
     if (!searchKey)
-      var searchResults = Array.from(contacts.keys()).concat(Array.from(groups.keys()));
+      var searchResults = Object.keys(contacts).concat(Object.keys(groups));
     else
       var searchResults = searchIndex.search(searchKey);
-    var dispContacts = document.getElementById('contact-display');
-    dispContacts.children.forEach(child => {
-      if (searchResults.includes(child.getAttribute("name")))
-        child.style.display = 'block';
+    var contactList = document.getElementById('contact-display').children;
+    for (var i = 0; i < contactList.length; i++) {
+      if (searchResults.includes(contactList[i].getAttribute("name")))
+        contactList[i].style.display = 'block';
       else
-        child.style.display = 'none';
-    })
+        contactList[i].style.display = 'none';
+    };
   } catch (e) {
     console.log(e);
   }
