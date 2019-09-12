@@ -15,7 +15,25 @@
 
 </head>
 
-<body onload = "userDataStartUp();">
+<body onload="userDataStartUp();">
+
+  <div id="overlay">
+    <div class="userChecklist-container">
+      <input type="text" class="grpName form-control" placeholder="Group Name">
+      <div class="row searchBox">
+        <div class="col-sm-12 searchBox-inner">
+          <div class="form-group has-feedback">
+            <input id="searchList" type="text" class="form-control" placeholder="Search">
+            <span class="glyphicon glyphicon-search form-control-feedback"></span>
+          </div>
+        </div>
+      </div>
+      <div id="userChecklist"></div>
+      <button class="ok btn btn-success">Ok</button>
+      <button class="cancel btn btn-default">Cancel</button>
+    </div>
+  </div>
+
   <div class="container app">
     <div class="row app-one">
 
@@ -30,10 +48,10 @@
             </div>
             
           -->
-          <div class="col-sm-2 col-xs-2 heading-compose  pull-right">
+            <div class="col-sm-2 col-xs-2 heading-compose  pull-right">
               <i class="fa fa-comments fa-2x  pull-right" aria-hidden="true" onclick="createGroup();"></i>
             </div>
-            <br/>
+            <br />
             <span class="name-meta"><i>created by Ranchimall</i></span>
           </div>
 
@@ -63,14 +81,20 @@
         <!-- Heading -->
         <div class="row heading">
           <div class="col-sm-8 col-xs-8 heading-name">
-            <span class="heading-name-meta"><span id="recipient-status">O</span> &nbsp;&nbsp;<span id="recipient-floID">Select Contact</span>
+            <span class="heading-name-meta"><span id="recipient-status">O</span> &nbsp;&nbsp;<span
+                id="recipient-floID">Select Contact</span>
             </span>
           </div>
-          <!--
-          <div class="col-sm-1 col-xs-1  heading-dot pull-right">
+          <div class="col-sm-1 col-xs-1  heading-dot pull-right dropdown" id="groupOptions">
             <i class="fa fa-ellipsis-v fa-2x  pull-right" aria-hidden="true"></i>
+            <div class="dropdown-content">
+              <li onclick="addGroupMembers()">Add Members</li>
+              <li onclick="rmGroupMembers()">Remove Members</li>
+              <li onclick="addGroupAdmins()">Add Admins</li>
+              <li onclick="rmGroupAdmins()">Remove Admins</li>
+              <li onclick="deleteGroup()">Delete Group</li>
+            </div>
           </div>
-        -->
         </div>
         <!-- Heading End -->
 
@@ -87,14 +111,15 @@
           </div>
         -->
           <div class="col-sm-9 col-xs-9 reply-main">
-            <input class="form-control" rows="1" id="sendMsgInput" placeholder="Type message" autocomplete="off" ></input>
+            <input class="form-control" rows="1" id="sendMsgInput" placeholder="Type message"
+              autocomplete="off"></input>
           </div>
           <!--
           <div class="col-sm-1 col-xs-1 reply-recording">
             <i class="fa fa-microphone fa-2x" aria-hidden="true"></i>
           </div>
         -->
-          <div class="col-sm-1 col-xs-1 reply-send" onclick = "sendMsg()">
+          <div class="col-sm-1 col-xs-1 reply-send" onclick="sendMsg()">
             <i class="fa fa-send fa-2x" aria-hidden="true"></i>
           </div>
         </div>

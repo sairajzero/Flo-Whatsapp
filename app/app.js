@@ -322,7 +322,7 @@ function userDataStartUp() {
     }
   });
   document.getElementById("searchContact").addEventListener("input", searchContact, true);
-
+  document.getElementById("searchList").addEventListener("input", searchChecklist, true);
   getDatafromAPI().then(result => {
     console.log(result);
     getContactsfromIDB().then(result => {
@@ -1012,11 +1012,12 @@ function checkStatusInterval() {
 function changeReceiver(param) {
   if (receiverID !== undefined)
     document.getElementById(receiverID).style.display = 'none';
-  console.log(param.getAttribute("name"));
+  //console.log(param.getAttribute("name"));
   receiverID = param.getAttribute("name");
   document.getElementById('recipient-floID').innerHTML = receiverID;
   receiverStatus(false)
   document.getElementById(receiverID).style.display = 'block';
+  document.getElementById("groupOptions").style.display = 'none';
 
   if (receiverID in contacts) {
     msgType = 'direct';
@@ -1051,6 +1052,21 @@ function changeReceiver(param) {
     if (receiverWebSocket !== undefined && receiverWebSocket.readyState === WebSocket.OPEN)
       receiverWebSocket.close()
     receiverWebSocket = undefined;
+    if (selfID == groups[receiverID].creator) {
+      var grpOpt = document.getElementById("groupOptions");
+      grpOpt.style.display = 'block';
+      var optList = grpOpt.querySelectorAll('li');
+      for (var i = 0; i < optList.length; i++)
+        optList[i].style.display = 'block';
+    } else if (groups[receiverID].admins.includes(selfID)) {
+      var grpOpt = document.getElementById("groupOptions");
+      grpOpt.style.display = 'block';
+      var optList = grpOpt.querySelectorAll('li');
+      for (var i = 0; i < 2; i++)
+        optList[i].style.display = 'block';
+      for (var i = 2; i < optList.length; i++)
+        optList[i].style.display = 'none';
+    }
   }
 }
 
@@ -1291,27 +1307,29 @@ function deleteGroupFromIDB(groupID) {
 }
 
 function createGroup() {
-  var members = prompt("Enter Members FLO_ID : ");
-  var grpName = prompt("Enter Group Name : ");
-
-  var grpInfo = floOpt.genNewIDpair();
-  grpInfo.name = grpName;
-  grpInfo.members = members.split(',');
-  grpInfo.creator = selfID;
-  grpInfo.admins = [];
-  var grpInfoStr = JSON.stringify(grpInfo);
-  console.log(grpInfoStr);
-  var data = {
-    from: selfID,
-    newGroup: {
-      sign: floOpt.signData(grpInfoStr, privKey)
+  customCheckList(Object.keys(contacts), [selfID], 'Create Group', 'success').then(result => {
+    var grpInfo = floOpt.genNewIDpair();
+    grpInfo.name = result.grpName;
+    grpInfo.members = result.members;
+    grpInfo.members.push(selfID)
+    grpInfo.creator = selfID;
+    grpInfo.admins = [];
+    var grpInfoStr = JSON.stringify(grpInfo);
+    console.log(grpInfoStr);
+    var data = {
+      from: selfID,
+      newGroup: {
+        sign: floOpt.signData(grpInfoStr, privKey)
+      }
     }
-  }
-  grpInfo.members.forEach(floID => {
-    data.to = floID;
-    data.newGroup.groupInfo = floOpt.encryptData(grpInfoStr, contacts[floID].pubKey),
-      sendData(floID, JSON.stringify(data));
-  });
+    grpInfo.members.forEach(floID => {
+      data.to = floID;
+      data.newGroup.groupInfo = floOpt.encryptData(grpInfoStr, contacts[floID].pubKey),
+        sendData(floID, JSON.stringify(data));
+    });
+  }).catch(error => {
+    console.log(error);
+  })
 }
 
 function deleteGroup() {
@@ -1332,113 +1350,125 @@ function deleteGroup() {
 }
 
 function addGroupMembers() {
-  var newMembers = prompt("Enter new Members : ");
-  newMembers = newMembers.split(',');
-  var data1 = {
-    from: selfID,
-    addGroupMembers: {
-      group: receiverID,
-      members: newMembers,
-      sign: floOpt.signData('addGroupMembers:' + receiverID + newMembers.join('|'), privKey)
+  customCheckList(Object.keys(contacts), groups[receiverID].members, 'Add Members', 'success').then(result => {
+    var newMembers = result.members;
+    var data1 = {
+      from: selfID,
+      addGroupMembers: {
+        group: receiverID,
+        members: newMembers,
+        sign: floOpt.signData('addGroupMembers:' + receiverID + newMembers.join('|'), privKey)
+      }
     }
-  }
-  groups[receiverID].members.forEach(floID => {
-    if (floID == selfID) //dont send to self
-      return;
-    data1.to = floID;
-    sendData(floID, JSON.stringify(data1));
-  });
-  groups[receiverID].members = groups[receiverID].members.concat(newMembers);
-  var grpInfoStr = JSON.stringify(groups[receiverID]);
-  console.log(grpInfoStr);
-  var data2 = {
-    from: selfID,
-    newGroup: {
-      sign: floOpt.signData(grpInfoStr, privKey)
+    groups[receiverID].members.forEach(floID => {
+      if (floID == selfID) //dont send to self
+        return;
+      data1.to = floID;
+      sendData(floID, JSON.stringify(data1));
+    });
+    groups[receiverID].members = groups[receiverID].members.concat(newMembers);
+    var grpInfoStr = JSON.stringify(groups[receiverID]);
+    console.log(grpInfoStr);
+    var data2 = {
+      from: selfID,
+      newGroup: {
+        sign: floOpt.signData(grpInfoStr, privKey)
+      }
     }
-  }
-  newMembers.forEach(floID => {
-    data2.to = floID;
-    data2.newGroup.groupInfo = floOpt.encryptData(grpInfoStr, contacts[floID].pubKey),
-      sendData(floID, JSON.stringify(data2));
-  });
-  storeGroup(grpInfoStr, receiverID);
+    newMembers.forEach(floID => {
+      data2.to = floID;
+      data2.newGroup.groupInfo = floOpt.encryptData(grpInfoStr, contacts[floID].pubKey),
+        sendData(floID, JSON.stringify(data2));
+    });
+    storeGroup(grpInfoStr, receiverID);
+  }).catch(error => {
+    console.log(error);
+  })
 }
 
 function rmGroupMembers() {
-  var rmMembers = prompt("Enter Members to remove : ");
-  rmMembers = rmMembers.split(',');
-  var data1 = {
-    from: selfID,
-    rmGroupMembers: {
-      group: receiverID,
-      members: rmMembers,
-      sign: floOpt.signData('rmGroupMembers:' + receiverID + rmMembers.join('|'), privKey)
+  customCheckList(groups[receiverID].members, [], 'Remove Members', 'danger').then(result => {
+    var rmMembers = result.members;
+    var data1 = {
+      from: selfID,
+      rmGroupMembers: {
+        group: receiverID,
+        members: rmMembers,
+        sign: floOpt.signData('rmGroupMembers:' + receiverID + rmMembers.join('|'), privKey)
+      }
     }
-  }
-  groups[receiverID].members = groups[receiverID].members.filter(x => !rmMembers.includes(x)); //remove member from group
-  storeGroup(JSON.stringify(groups[receiverID]), receiverID);
-  groups[receiverID].members.forEach(floID => {
-    if (floID == selfID)
-      return;
-    data1.to = floID;
-    sendData(floID, JSON.stringify(data1));
-  });
-  var data2 = {
-    from: selfID,
-    deleteGroup: {
-      group: receiverID,
-      sign: floOpt.signData('deleteGroup:' + receiverID, privKey)
-    }
-  };
-  rmMembers.forEach(floID => {
-    data2.to = floID;
-    sendData(floID, JSON.stringify(data2));
-  });
+    groups[receiverID].members = groups[receiverID].members.filter(x => !rmMembers.includes(x)); //remove member from group
+    storeGroup(JSON.stringify(groups[receiverID]), receiverID);
+    groups[receiverID].members.forEach(floID => {
+      if (floID == selfID)
+        return;
+      data1.to = floID;
+      sendData(floID, JSON.stringify(data1));
+    });
+    var data2 = {
+      from: selfID,
+      deleteGroup: {
+        group: receiverID,
+        sign: floOpt.signData('deleteGroup:' + receiverID, privKey)
+      }
+    };
+    rmMembers.forEach(floID => {
+      data2.to = floID;
+      sendData(floID, JSON.stringify(data2));
+    });
+  }).catch(error => {
+    console.log(error);
+  })
 }
 
 function addGroupAdmins() {
-  var newAdmins = prompt("Enter new Admins : ");
-  newAdmins = newAdmins.split(',');
-  var data = {
-    from: selfID,
-    addGroupAdmins: {
-      group: receiverID,
-      admins: newAdmins,
-      sign: floOpt.signData('addGroupAdmins:' + receiverID + newAdmins.join('|'), privKey)
+  customCheckList(groups[receiverID].members, groups[receiverID].admins, 'Add Admins', 'success').then(result => {
+    var newAdmins = result.members;
+    var data = {
+      from: selfID,
+      addGroupAdmins: {
+        group: receiverID,
+        admins: newAdmins,
+        sign: floOpt.signData('addGroupAdmins:' + receiverID + newAdmins.join('|'), privKey)
+      }
     }
-  }
-  groups[receiverID].members.forEach(floID => {
-    if (floID == selfID) //dont send to self
-      return;
-    data.to = floID;
-    sendData(floID, JSON.stringify(data));
-  });
-  groups[receiverID].admins = groups[receiverID].admins.concat(newAdmins);
-  var grpInfoStr = JSON.stringify(groups[receiverID]);
-  storeGroup(grpInfoStr, receiverID);
+    groups[receiverID].members.forEach(floID => {
+      if (floID == selfID) //dont send to self
+        return;
+      data.to = floID;
+      sendData(floID, JSON.stringify(data));
+    });
+    groups[receiverID].admins = groups[receiverID].admins.concat(newAdmins);
+    var grpInfoStr = JSON.stringify(groups[receiverID]);
+    storeGroup(grpInfoStr, receiverID);
+  }).catch(error => {
+    console.log(error);
+  })
 }
 
 function rmGroupAdmins() {
-  var rmAdmins = prompt("Enter rmAdmins: ");
-  rmAdmins = rmAdmins.split(',');
-  var data = {
-    from: selfID,
-    rmGroupAdmins: {
-      group: receiverID,
-      admins: rmAdmins,
-      sign: floOpt.signData('rmGroupAdmins:' + receiverID + rmAdmins.join('|'), privKey)
+  customCheckList(groups[receiverID].admins, [], 'Remove Admins', 'danger').then(result => {
+    var rmAdmins = result.members;
+    var data = {
+      from: selfID,
+      rmGroupAdmins: {
+        group: receiverID,
+        admins: rmAdmins,
+        sign: floOpt.signData('rmGroupAdmins:' + receiverID + rmAdmins.join('|'), privKey)
+      }
     }
-  }
-  groups[receiverID].members.forEach(floID => {
-    if (floID == selfID) //dont send to self
-      return;
-    data.to = floID;
-    sendData(floID, JSON.stringify(data));
-  });
-  groups[receiverID].admins = groups[receiverID].admins.filter(x => !rmAdmins.includes(x)); //remove admins
-  var grpInfoStr = JSON.stringify(groups[receiverID]);
-  storeGroup(grpInfoStr, receiverID);
+    groups[receiverID].members.forEach(floID => {
+      if (floID == selfID) //dont send to self
+        return;
+      data.to = floID;
+      sendData(floID, JSON.stringify(data));
+    });
+    groups[receiverID].admins = groups[receiverID].admins.filter(x => !rmAdmins.includes(x)); //remove admins
+    var grpInfoStr = JSON.stringify(groups[receiverID]);
+    storeGroup(grpInfoStr, receiverID);
+  }).catch(error => {
+    console.log(error);
+  })
 }
 
 function searchContact() {
@@ -1454,6 +1484,79 @@ function searchContact() {
         contactList[i].style.display = 'block';
       else
         contactList[i].style.display = 'none';
+    };
+  } catch (e) {
+    console.log(e);
+  }
+}
+
+function customCheckList(userList, ignoreList, okBtnVal = "Ok", okBtnType = "success") {
+  var dialog = document.getElementById('overlay');
+  dialog.style.display = "block";
+  var okButton = dialog.querySelector('button.ok');
+  var cancelButton = dialog.querySelector('button.cancel');
+  okButton.setAttribute("class", `ok btn btn-${okBtnType}`);
+  okButton.innerHTML = okBtnVal;
+  var grpNameInput = dialog.querySelector('input.grpName')
+  grpNameInput.style.display = (okBtnVal === "Create Group" ? "block" : "none");
+  grpNameInput.value = '';
+  var userChecklist = document.getElementById('userChecklist');
+  for (var i = 0; i < userList.length; i++) {
+    if (ignoreList.includes(userList[i]))
+      continue;
+    var listEl = document.createElement('label');
+    listEl.setAttribute('class', "btn btn-default listLabel");
+    listEl.setAttribute('name', userList[i]);
+    listEl.innerHTML = `
+          <span>${contacts[userList[i]].name}<br/>
+              <sub>@${userList[i]}</sub>
+          </span>
+          <input type="checkbox" class="badgebox" value="${userList[i]}">
+          <span class="badge">&check;</span>`;
+    userChecklist.appendChild(listEl);
+  }
+  return new Promise((resolve, reject) => {
+    dialog.addEventListener('click', function handleButtonClicks(e) {
+      if (e.target.tagName !== 'BUTTON') {
+        return;
+      }
+      dialog.removeEventListener('click', handleButtonClicks);
+      dialog.style.display = 'none';
+      if (e.target === okButton) {
+        var selectedList = [];
+        var checklist = dialog.querySelectorAll('input.badgebox');
+        for (var i = 0; i < checklist.length; i++)
+          if (checklist[i].checked)
+            selectedList.push(checklist[i].value);
+        if (selectedList.length == 0)
+          reject('User Didnt select Any Users!');
+        else
+          resolve({
+            grpName: grpNameInput.value,
+            members: selectedList
+          });
+      } else if (e.target === cancelButton) {
+        reject('User cancelled!');
+      } else {
+        reject('Some other button was clicked!');
+      }
+    });
+  });
+}
+
+function searchChecklist() {
+  try {
+    var searchKey = this.value;
+    if (!searchKey)
+      var searchResults = Object.keys(contacts);
+    else
+      var searchResults = searchIndex.search(searchKey);
+    var checklist = document.getElementById('userChecklist').children;
+    for (var i = 0; i < checklist.length; i++) {
+      if (searchResults.includes(checklist[i].getAttribute("name")))
+        checklist[i].style.display = 'block';
+      else
+        checklist[i].style.display = 'none';
     };
   } catch (e) {
     console.log(e);
