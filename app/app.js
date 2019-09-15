@@ -214,6 +214,20 @@ var floOpt = {
     } catch (e) {
       console.log(e);
     }
+  },
+  verifyPrivKey: function (privateKeyHex, floID) {
+    try {
+      var key = new Bitcoin.ECKey(privateKeyHex);
+      if (key.priv == null)
+        return false;
+      key.setCompressed(true);
+      if (floID == key.getBitcoinAddress())
+        return true;
+      else
+        return false;
+    } catch (e) {
+      console.log(e);
+    }
   }
 }
 //Script for AJAX, and register functions
@@ -315,8 +329,8 @@ function broadcastTx(signedTxHash) {
 function userDataStartUp() {
   console.log("StartUp");
 
-  document.getElementById("sendMsgInput").addEventListener("keyup", (event) => {
-    if (event.keyCode === 13) {
+  document.getElementById("sendMsgInput").addEventListener("keydown", (event) => {
+    if (event.keyCode === 13 && !event.shiftKey) {
       event.preventDefault();
       sendMsg();
     }
@@ -342,15 +356,10 @@ function userDataStartUp() {
               groups = result;
               readMsgfromIDB().then(result => {
                 console.log(result);
-                readGroupMsgfromIDB().then(result => {
-                  console.log(result);
-                  initselfWebSocket();
-                  pingSuperNodeForAwayMessages();
-                  displayContacts();
-                  const createClock = setInterval(checkStatusInterval, 30000);
-                }).catch(error => {
-                  console.log(error);
-                });
+                initselfWebSocket();
+                pingSuperNodeForAwayMessages();
+                displayContacts();
+                const createClock = setInterval(checkStatusInterval, 30000);
               }).catch(error => {
                 console.log(error);
               });
@@ -450,6 +459,12 @@ function getDatafromAPI() {
       objectStore3.createIndex('floID', 'floID', {
         unique: false
       });
+      objectStore3.createIndex('groupID', 'groupID', {
+        unique: false
+      });
+      objectStore3.createIndex('sender', 'sender', {
+        unique: false
+      });
       objectStore3.createIndex('type', 'type', {
         unique: false
       });
@@ -457,21 +472,6 @@ function getDatafromAPI() {
         keyPath: 'groupID'
       });
       objectStore4.createIndex('groupInfo', 'groupInfo', {
-        unique: false
-      });
-      var objectStore5 = db.createObjectStore("groupMsg", {
-        keyPath: 'time'
-      });
-      objectStore5.createIndex('text', 'text', {
-        unique: false
-      });
-      objectStore5.createIndex('groupID', 'groupID', {
-        unique: false
-      });
-      objectStore5.createIndex('type', 'type', {
-        unique: false
-      });
-      objectStore5.createIndex('sender', 'sender', {
         unique: false
       });
     };
@@ -657,6 +657,13 @@ function readMsgfromIDB() {
       createLi.style.display = 'none';
       disp.appendChild(createLi);
     }
+    for (floID in groups) {
+      var createLi = document.createElement('div');
+      createLi.setAttribute("id", floID);
+      createLi.setAttribute("class", "message-inner");
+      createLi.style.display = 'none';
+      disp.appendChild(createLi);
+    }
     var idb = indexedDB.open("FLO_Chat");
     idb.onerror = (event) => {
       reject("Error in opening IndexedDB!");
@@ -678,37 +685,6 @@ function readMsgfromIDB() {
   });
 }
 
-function readGroupMsgfromIDB() {
-  return new Promise((resolve, reject) => {
-    var disp = document.getElementById("conversation");
-    for (floID in groups) {
-      var createLi = document.createElement('div');
-      createLi.setAttribute("id", floID);
-      createLi.setAttribute("class", "message-inner");
-      createLi.style.display = 'none';
-      disp.appendChild(createLi);
-    }
-    var idb = indexedDB.open("FLO_Chat");
-    idb.onerror = (event) => {
-      reject("Error in opening IndexedDB!");
-    };
-    idb.onsuccess = (event) => {
-      var db = event.target.result;
-      var obs = db.transaction("groupMsg", "readwrite").objectStore("groupMsg");
-      obs.openCursor().onsuccess = (event) => {
-        var cursor = event.target.result;
-        if (cursor) {
-          createMsgElement(cursor.value);
-          cursor.continue();
-        } else {
-          resolve("Read Group Msgs from IDB");
-        }
-      };
-      db.close();
-    };
-  });
-}
-
 function storeMsg(data) {
   var idb = indexedDB.open("FLO_Chat");
   idb.onerror = (event) => {
@@ -717,19 +693,6 @@ function storeMsg(data) {
   idb.onsuccess = (event) => {
     var db = event.target.result;
     var obs = db.transaction("messages", "readwrite").objectStore("messages");
-    obs.add(data);
-    db.close();
-  };
-}
-
-function storeGroupMsg(data) {
-  var idb = indexedDB.open("FLO_Chat");
-  idb.onerror = (event) => {
-    console.log("Error in opening IndexedDB!");
-  };
-  idb.onsuccess = (event) => {
-    var db = event.target.result;
-    var obs = db.transaction("groupMsg", "readwrite").objectStore("groupMsg");
     obs.add(data);
     db.close();
   };
@@ -780,11 +743,12 @@ function displayContacts() {
     createLi.innerHTML = `<div class="col-sm-11 col-xs-11 sideBar-main">
                 <div class="row">
                   <div class="col-sm-12 col-xs-12 sideBar-name">
-                    <span class="name-meta">${contacts[floID].name}</span><br/>
+                    <span class="name-meta"></span><br/>
                     <span class="time-meta">@${floID}</span>
                   </div>
                 </div>
               </div>`
+    createLi.querySelector("span.name-meta").textContent = contacts[floID].name;
     listElement.appendChild(createLi);
   }
   for (floID in groups) {
@@ -795,11 +759,12 @@ function displayContacts() {
     createLi.innerHTML = `<div class="col-sm-11 col-xs-11 sideBar-main">
                 <div class="row">
                   <div class="col-sm-12 col-xs-12 sideBar-name">
-                    <span class="name-meta">${groups[floID].name}</span><br/>
+                    <span class="name-meta"></span><br/>
                     <span class="time-meta">#${floID}</span>
                   </div>
                 </div>
               </div>`
+    createLi.querySelector("span.name-meta").textContent = groups[floID].name;
     listElement.appendChild(createLi);
   }
 }
@@ -858,7 +823,7 @@ function processIncomingData(data) {
       type: "R"
     }
     createMsgElement(msgInfo);
-    storeGroupMsg(msgInfo);
+    storeMsg(msgInfo);
   } else if (data.groupMsg !== undefined && data.groupMsg.group in groups) {
     if (!(groups[data.groupMsg.group].members.includes(data.from)))
       return
@@ -873,11 +838,11 @@ function processIncomingData(data) {
       type: "R"
     }
     createMsgElement(msgInfo);
-    storeGroupMsg(msgInfo);
+    storeMsg(msgInfo)
   } else if (data.newGroup !== undefined) {
     var groupInfoStr = floOpt.decryptData(data.newGroup.groupInfo.secret, data.newGroup.groupInfo.pubVal, privKey)
     var groupInfo = JSON.parse(groupInfoStr);
-    if (floOpt.verifyData(groupInfoStr, data.newGroup.sign, contacts[groupInfo.creator].pubKey)) {
+    if (floOpt.verifyData(groupInfoStr, data.newGroup.sign, contacts[groupInfo.creator].pubKey) && floOpt.verifyPrivKey(groupInfo.privKey, groupInfo.floID)) {
       groups[groupInfo.floID] = groupInfo;
       searchIndex.add(groupInfo.floID, groupInfo.name + ' #' + groupInfo.floID);
       storeGroup(groupInfoStr, groupInfo.floID);
@@ -937,7 +902,7 @@ function createMsgElement(msgInfo) {
       var msghd = '';
     } else {
       var msgEl = document.getElementById(msgInfo.groupID);
-      var msghd = `<b>${msgInfo.sender}</b>`;
+      var msghd = `<b>${msgInfo.sender}</b><br/>`;
     }
     if (!msgEl)
       return;
@@ -946,13 +911,14 @@ function createMsgElement(msgInfo) {
     msgdiv.innerHTML = `<div class="col-sm-12 message-main-${type[msgInfo.type]}">
                     <div class="${type[msgInfo.type]}">
                       <span class="message-text">
-                        ${msghd}<br/>${msgInfo.text}
+                        ${msghd}<pre></pre>
                       </span>
                       <span class="message-time pull-right">
                         ${getTime(msgInfo.time)}
                       </span>
                     </div>
                   </div>`;
+    msgdiv.querySelector("pre").textContent = msgInfo.text;
     msgEl.appendChild(msgdiv);
   } catch (e) {
     console.log(e);
@@ -1014,7 +980,7 @@ function changeReceiver(param) {
     document.getElementById(receiverID).style.display = 'none';
   //console.log(param.getAttribute("name"));
   receiverID = param.getAttribute("name");
-  document.getElementById('recipient-floID').innerHTML = receiverID;
+  document.getElementById('recipient-floID').textContent = receiverID;
   receiverStatus(false)
   document.getElementById(receiverID).style.display = 'block';
   document.getElementById("groupOptions").style.display = 'none';
@@ -1159,7 +1125,7 @@ function sendGroupMsg(msg, time, sign) {
     type: "S"
   }
   createMsgElement(msgInfo);
-  storeGroupMsg(msgInfo);
+  storeMsg(msgInfo);
 }
 
 function sendStoredSuperNodeMsgs(floID) {
@@ -1261,11 +1227,12 @@ function createGroupDisplay(groupInfo) {
   createLi.innerHTML = `<div class="col-sm-11 col-xs-11 sideBar-main">
               <div class="row">
                 <div class="col-sm-12 col-xs-12 sideBar-name">
-                  <span class="name-meta">${groupInfo.name}</span><br/>
+                  <span class="name-meta"></span><br/>
                   <span class="time-meta">#${groupInfo.floID}</span>
                 </div>
               </div>
             </div>`;
+  createLi.querySelector("span.name-meta").textContent = groupInfo.name;
   document.getElementById('contact-display').appendChild(createLi);
 
   var createEl = document.createElement('div');
@@ -1496,7 +1463,7 @@ function customCheckList(userList, ignoreList, okBtnVal = "Ok", okBtnType = "suc
   var okButton = dialog.querySelector('button.ok');
   var cancelButton = dialog.querySelector('button.cancel');
   okButton.setAttribute("class", `ok btn btn-${okBtnType}`);
-  okButton.innerHTML = okBtnVal;
+  okButton.textContent = okBtnVal;
   var grpNameInput = dialog.querySelector('input.grpName')
   grpNameInput.style.display = (okBtnVal === "Create Group" ? "block" : "none");
   grpNameInput.value = '';
@@ -1508,11 +1475,11 @@ function customCheckList(userList, ignoreList, okBtnVal = "Ok", okBtnType = "suc
     listEl.setAttribute('class', "btn btn-default listLabel");
     listEl.setAttribute('name', userList[i]);
     listEl.innerHTML = `
-          <span>${contacts[userList[i]].name}<br/>
-              <sub>@${userList[i]}</sub>
-          </span>
+          <span></span><br/>
+          <sub>@${userList[i]}</sub>
           <input type="checkbox" class="badgebox" value="${userList[i]}">
           <span class="badge">&check;</span>`;
+    listEl.querySelector("span").textContent = contacts[userList[i]].name;
     userChecklist.appendChild(listEl);
   }
   return new Promise((resolve, reject) => {

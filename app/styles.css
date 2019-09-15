@@ -10,6 +10,20 @@ span {
   box-sizing: border-box;
 }
 
+pre {
+  color: inherit;
+  padding: 0 !important;
+  margin: 0 !important;
+  font: inherit;
+  background-color: transparent;
+  border: 0;
+  white-space: pre-wrap;
+  white-space: -moz-pre-wrap;
+  white-space: -pre-wrap;
+  white-space: -o-pre-wrap;
+  word-wrap: break-word;
+}
+
 body {
   background: no-repeat fixed center;
   background-size: cover;
@@ -78,18 +92,6 @@ body {
   z-index: 1000;
 }
 
-.heading-avatar {
-  padding: 0 !important;
-  cursor: pointer;
-
-}
-
-.heading-avatar-icon img {
-  border-radius: 50%;
-  height: 40px;
-  width: 40px;
-}
-
 .heading-name {
   padding: 0 !important;
   cursor: pointer;
@@ -115,31 +117,12 @@ body {
   color: white;
 }
 
-.heading-online {
-  display: none;
-  padding: 0 5px;
-  font-size: 12px;
-  color: #93918f;
-}
-
-.heading-compose {
+.heading-icon {
   padding: 0;
 }
 
-.heading-compose i {
+.heading-icon i {
   text-align: center;
-  padding: 5px;
-  color: #93918f;
-  cursor: pointer;
-}
-
-.heading-dot {
-  padding: 0;
-  margin-left: 10px;
-}
-
-.heading-dot i {
-  text-align: right;
   padding: 5px;
   color: #93918f;
   cursor: pointer;
@@ -346,30 +329,28 @@ body {
 
 .message-main-receiver {
   /*padding: 10px 20px;*/
-  max-width: 60%;
+  max-width: 80%;
   height: auto;
 }
 
 .message-main-sender {
   padding: 3px 20px !important;
-  margin-left: 40% !important;
-  max-width: 60%;
+  margin-left: 20% !important;
+  max-width: 80%;
   height: auto;
 }
 
 .message-text {
   margin: 0 !important;
-  padding: 5px !important;
-  word-wrap: break-word;
+  padding: 0px !important;
   font-weight: 200;
   font-size: 14px;
-  padding-bottom: 0 !important;
   height: auto;
+  word-break: break-word;
 }
 
 .message-time {
   margin: 0 !important;
-  margin-left: 50px !important;
   font-size: 12px;
   text-align: right;
   color: #9a9a9a;
@@ -383,8 +364,6 @@ body {
   border-radius: 10px 10px 10px 0;
   background: #ffffff;
   font-size: 12px;
-  word-wrap: break-word;
-  display: inline-block;
   height: auto;
 }
 
@@ -396,8 +375,6 @@ body {
   border-radius: 10px 10px 0 10px;
   padding: 4px 10px 7px !important;
   font-size: 12px;
-  display: inline-block;
-  word-wrap: break-word;
 }
 
 /*Reply*/
@@ -411,33 +388,11 @@ body {
   z-index: 1000;
 }
 
-.reply-emojis {
+.reply-icon {
   padding: 5px !important;
 }
 
-.reply-emojis i {
-  text-align: center;
-  padding: 5px 5px 5px 5px !important;
-  color: #93918f;
-  cursor: pointer;
-}
-
-.reply-recording {
-  padding: 5px !important;
-}
-
-.reply-recording i {
-  text-align: center;
-  padding: 5px !important;
-  color: #93918f;
-  cursor: pointer;
-}
-
-.reply-send {
-  padding: 5px !important;
-}
-
-.reply-send i {
+.reply-icon i {
   text-align: center;
   padding: 5px !important;
   color: #93918f;
@@ -448,7 +403,7 @@ body {
   padding: 2px 5px !important;
 }
 
-.reply-main input {
+.reply-main textarea {
   width: 100%;
   resize: none;
   overflow: hidden;
@@ -459,9 +414,10 @@ body {
   box-shadow: none;
   height: 100%;
   font-size: 16px;
+  overflow: hidden;
 }
 
-.reply-main input:focus {
+.reply-main textarea:focus {
   outline: none;
   border: none;
   text-indent: 5px;
@@ -483,30 +439,11 @@ body {
     font-size: 2.3em !important;
   }
 
-  .heading-avatar {
-    padding: 0 !important;
-  }
-
-  .heading-avatar-icon img {
-    height: 50px;
-    width: 50px;
-  }
-
-  .heading-compose {
+  .heading-icon {
     padding: 5px !important;
   }
 
-  .heading-compose i {
-    color: #fff;
-    cursor: pointer;
-  }
-
-  .heading-dot {
-    padding: 5px !important;
-    margin-left: 10px !important;
-  }
-
-  .heading-dot i {
+  .heading-icon i {
     color: #fff;
     cursor: pointer;
   }
@@ -517,16 +454,6 @@ body {
 
   .sideBar-body {
     height: 80px;
-  }
-
-  .sideBar-avatar {
-    text-align: left;
-    padding: 0 8px !important;
-  }
-
-  .avatar-icon img {
-    height: 55px;
-    width: 55px;
   }
 
   .sideBar-main {
@@ -564,9 +491,7 @@ body {
     padding: 0 !important;
     margin: 0 !important;
     height: 100%;
-    /*width: 100%;*/
     border-left: 1px solid rgba(0, 0, 0, .08);
-    /*overflow-y: auto;*/
   }
 
   .message {
@@ -577,11 +502,11 @@ body {
     height: 70px;
   }
 
-  .reply-emojis {
+  .reply-icon {
     padding: 5px 0 !important;
   }
 
-  .reply-emojis i {
+  .reply-icon i {
     padding: 5px 2px !important;
     font-size: 1.8em !important;
   }
@@ -593,24 +518,6 @@ body {
   .reply-main input {
     padding: 8px !important;
     font-size: 18px;
-  }
-
-  .reply-recording {
-    padding: 5px 0 !important;
-  }
-
-  .reply-recording i {
-    padding: 5px 0 !important;
-    font-size: 1.8em !important;
-  }
-
-  .reply-send {
-    padding: 5px 0 !important;
-  }
-
-  .reply-send i {
-    padding: 5px 2px 5px 0 !important;
-    font-size: 1.8em !important;
   }
 }
 

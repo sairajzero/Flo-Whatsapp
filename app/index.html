@@ -43,12 +43,12 @@
           <div class="row heading">
             <span class="name-meta"><b>FLO Whatsapp </b> </span>
             <!--
-            <div class="col-sm-1 col-xs-1  heading-dot  pull-right">
+            <div class="col-sm-1 col-xs-1  heading-icon  pull-right">
               <i class="fa fa-ellipsis-v fa-2x  pull-right" aria-hidden="true" onclick="min();"></i>
             </div>
             
           -->
-            <div class="col-sm-2 col-xs-2 heading-compose  pull-right">
+            <div class="col-sm-2 col-xs-2 heading-icon  pull-right">
               <i class="fa fa-comments fa-2x  pull-right" aria-hidden="true" onclick="createGroup();"></i>
             </div>
             <br />
@@ -81,11 +81,11 @@
         <!-- Heading -->
         <div class="row heading">
           <div class="col-sm-8 col-xs-8 heading-name">
-            <span class="heading-name-meta"><span id="recipient-status">O</span> &nbsp;&nbsp;<span
-                id="recipient-floID">Select Contact</span>
+            <span class="heading-name-meta"><span id="recipient-status">O</span> &nbsp;&nbsp;
+              <span id="recipient-floID">Select Contact</span>
             </span>
           </div>
-          <div class="col-sm-1 col-xs-1  heading-dot pull-right dropdown" id="groupOptions">
+          <div class="col-sm-1 col-xs-1  heading-icon pull-right dropdown" id="groupOptions">
             <i class="fa fa-ellipsis-v fa-2x  pull-right" aria-hidden="true"></i>
             <div class="dropdown-content">
               <li onclick="addGroupMembers()">Add Members</li>
@@ -106,20 +106,20 @@
         <!-- Reply Box -->
         <div class="row reply">
           <!--
-          <div class="col-sm-1 col-xs-1 reply-emojis">
+          <div class="col-sm-1 col-xs-1 reply-icon">
             <i class="fa fa-smile-o fa-2x"></i>
           </div>
         -->
           <div class="col-sm-9 col-xs-9 reply-main">
-            <input class="form-control" rows="1" id="sendMsgInput" placeholder="Type message"
-              autocomplete="off"></input>
+            <textarea class="form-control" rows="1" id="sendMsgInput" placeholder="Type message"
+              autocomplete="off"></textarea>
           </div>
           <!--
-          <div class="col-sm-1 col-xs-1 reply-recording">
+          <div class="col-sm-1 col-xs-1 reply-icon">
             <i class="fa fa-microphone fa-2x" aria-hidden="true"></i>
           </div>
         -->
-          <div class="col-sm-1 col-xs-1 reply-send" onclick="sendMsg()">
+          <div class="col-sm-1 col-xs-1 reply-icon" onclick="sendMsg()">
             <i class="fa fa-send fa-2x" aria-hidden="true"></i>
           </div>
         </div>
