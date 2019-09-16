@@ -161,13 +161,13 @@ var floOpt = {
     var floID = key.getBitcoinAddress();
     return floID;
   },
-  signData: function (msg, privateKeyHex) {
+  signData: function (data, privateKeyHex) {
     var key = new Bitcoin.ECKey(privateKeyHex);
     key.setCompressed(true);
 
     var privateKeyArr = key.getBitcoinPrivateKeyByteArray();
     privateKey = BigInteger.fromByteArrayUnsigned(privateKeyArr);
-    var messageHash = Crypto.SHA256(msg);
+    var messageHash = Crypto.SHA256(data);
 
     var messageHashBigInteger = new BigInteger(messageHash);
     var messageSign = Bitcoin.ECDSA.sign(messageHashBigInteger, key.priv);
@@ -175,8 +175,8 @@ var floOpt = {
     var sighex = Crypto.util.bytesToHex(messageSign);
     return sighex;
   },
-  verifyData: function (msg, signatureHex, publicKeyHex) {
-    var msgHash = Crypto.SHA256(msg);
+  verifyData: function (data, signatureHex, publicKeyHex) {
+    var msgHash = Crypto.SHA256(data);
     var messageHashBigInteger = new BigInteger(msgHash);
 
     var sigBytes = Crypto.util.hexToBytes(signatureHex);
@@ -326,10 +326,19 @@ function broadcastTx(signedTxHash) {
   return result;
 }
 
+function resetForm(formID) {
+  var formEl = document.getElementById(formID);
+  formEl.reset()
+  var labelSpans = formEl.querySelectorAll('span');
+  for (var i = 0; i < labelSpans.length; i++)
+    labelSpans[i].textContent = '';
+}
+
 function userDataStartUp() {
   console.log("StartUp");
-
-  document.getElementById("sendMsgInput").addEventListener("keydown", (event) => {
+  resetForm("replyForm");
+  //Initiate Event Handling
+  document.getElementById("msgInput").addEventListener("keydown", (event) => {
     if (event.keyCode === 13 && !event.shiftKey) {
       event.preventDefault();
       sendMsg();
@@ -337,6 +346,12 @@ function userDataStartUp() {
   });
   document.getElementById("searchContact").addEventListener("input", searchContact, true);
   document.getElementById("searchList").addEventListener("input", searchChecklist, true);
+  document.getElementById('fileInput').onchange = function () {
+    var fileName = this.value.split("\\").pop();
+    this.nextSibling.textContent = fileName;
+  };
+
+  //Start Program
   getDatafromAPI().then(result => {
     console.log(result);
     getContactsfromIDB().then(result => {
@@ -453,7 +468,7 @@ function getDatafromAPI() {
       var objectStore3 = db.createObjectStore("messages", {
         keyPath: 'time'
       });
-      objectStore3.createIndex('text', 'text', {
+      objectStore3.createIndex('msgData', 'msgData', {
         unique: false
       });
       objectStore3.createIndex('floID', 'floID', {
@@ -813,13 +828,13 @@ function initselfWebSocket() {
 
 function processIncomingData(data) {
   if (data.directMsg !== undefined) {
-    var msg = floOpt.decryptData(data.directMsg.msgCipher.secret, data.directMsg.msgCipher.pubVal, privKey)
-    if (!floOpt.verifyData(msg, data.directMsg.sign, contacts[data.from].pubKey))
+    var msgData = floOpt.decryptData(data.directMsg.msgCipher.secret, data.directMsg.msgCipher.pubVal, privKey)
+    if (!floOpt.verifyData(msgData, data.directMsg.sign, contacts[data.from].pubKey))
       return
     var msgInfo = {
       time: Date.now(),
       floID: data.from,
-      text: msg,
+      msgData: msgData,
       type: "R"
     }
     createMsgElement(msgInfo);
@@ -827,14 +842,14 @@ function processIncomingData(data) {
   } else if (data.groupMsg !== undefined && data.groupMsg.group in groups) {
     if (!(groups[data.groupMsg.group].members.includes(data.from)))
       return
-    var msg = floOpt.decryptData(data.groupMsg.msgCipher.secret, data.groupMsg.msgCipher.pubVal, groups[data.groupMsg.group].privKey);
-    if (!floOpt.verifyData(msg, data.groupMsg.sign, contacts[data.from].pubKey))
+    var msgData = floOpt.decryptData(data.groupMsg.msgCipher.secret, data.groupMsg.msgCipher.pubVal, groups[data.groupMsg.group].privKey);
+    if (!floOpt.verifyData(msgData, data.groupMsg.sign, contacts[data.from].pubKey))
       return
     var msgInfo = {
       time: Date.now(),
       groupID: data.groupMsg.group,
       sender: data.from,
-      text: msg,
+      msgData: msgData,
       type: "R"
     }
     createMsgElement(msgInfo);
@@ -898,28 +913,36 @@ function createMsgElement(msgInfo) {
       R: 'receiver'
     };
     if (!msgInfo.groupID) {
-      var msgEl = document.getElementById(msgInfo.floID);
+      var msgCon = document.getElementById(msgInfo.floID);
       var msghd = '';
     } else {
-      var msgEl = document.getElementById(msgInfo.groupID);
-      var msghd = `<b>${msgInfo.sender}</b><br/>`;
+      var msgCon = document.getElementById(msgInfo.groupID);
+      var msghd = `<b>${msgInfo.sender}</b>`;
     }
-    if (!msgEl)
+    if (!msgCon)
       return;
-    var msgdiv = document.createElement('div');
-    msgdiv.setAttribute("class", "row message-body");
-    msgdiv.innerHTML = `<div class="col-sm-12 message-main-${type[msgInfo.type]}">
+    var msgData = JSON.parse(msgInfo.msgData);
+    var msgEl = document.createElement('div');
+    msgEl.setAttribute("class", "row message-body");
+    msgEl.innerHTML = `<div class="col-sm-12 message-main-${type[msgInfo.type]}">
                     <div class="${type[msgInfo.type]}">
-                      <span class="message-text">
-                        ${msghd}<pre></pre>
+                      <span class="message-text">${msghd}
+                        <i class="hidden" aria-hidden="true"></i>
+                        <pre></pre>
                       </span>
                       <span class="message-time pull-right">
                         ${getTime(msgInfo.time)}
                       </span>
                     </div>
                   </div>`;
-    msgdiv.querySelector("pre").textContent = msgInfo.text;
-    msgEl.appendChild(msgdiv);
+    msgEl.querySelector("pre").textContent = msgData.text;
+    if (msgData.file) {
+      var fileEl = msgEl.querySelector("i");
+      fileEl.textContent = ` ${msgData.file.name} (${getFileSize(msgData.file.size)})`;
+      fileEl.setAttribute("onclick", `downloadFile(${msgInfo.time})`);
+      fileEl.setAttribute("class", "fa fa-arrow-circle-down");
+    }
+    msgCon.appendChild(msgEl);
   } catch (e) {
     console.log(e);
   }
@@ -1057,30 +1080,83 @@ function getTime(time) {
   return tmp;
 }
 
+function getFileSize(size){
+  var filesizeUnits = ['B','kB','MB','GB','TB'];
+  for(var i = 0;i<filesizeUnits.length;i++){
+    if(size/1024 < 1)
+      return `${Number((size).toFixed(1))}${filesizeUnits[i]}`; 
+    else
+      size = size/1024;
+  }
+}
+
 function sendMsg() {
   if (receiverID === undefined) {
     alert("Select a contact and send message");
     return;
   }
-  var inp = document.getElementById('sendMsgInput')
-  var msg = inp.value;
-  inp.value = "";
-  console.log(msg);
-  var time = Date.now();
-  var sign = floOpt.signData(msg, privKey);
-  if (msgType === 'direct')
-    sendDirectMsg(msg, time, sign);
-  else if (msgType === 'group')
-    sendGroupMsg(msg, time, sign);
+  getReplyInputs().then(msgData => {
+    console.log(msgData);
+    var time = Date.now();
+    var sign = floOpt.signData(msgData, privKey);
+    if (msgType === 'direct')
+      sendDirectMsg(msgData, time, sign);
+    else if (msgType === 'group')
+      sendGroupMsg(msgData, time, sign);
+  }).catch(error => {
+    console.log(error);
+  })
 }
 
-function sendDirectMsg(msg, time, sign) {
+function getfileData(fileInput) {
+  return new Promise((resolve, reject) => {
+    try {
+      var files = document.getElementById(fileInput).files;
+      if (files.length == 0)
+        resolve(null);
+      else {
+        var reader = new FileReader();
+        reader.onload = (event) => {
+          var fileBytes = Crypto.charenc.Binary.stringToBytes(event.target.result);
+          resolve({
+            name: files[0].name,
+            size: files[0].size,
+            content: Crypto.util.bytesToBase64(fileBytes)
+          });
+        };
+        reader.onerror = (event) => {
+          reject("File could not be read! Code " + event.target.error.code);
+        };
+        reader.readAsBinaryString(files[0]);
+      }
+    } catch (e) {
+      reject(e);
+    }
+  });
+}
+
+function getReplyInputs() {
+  return new Promise((resolve, reject) => {
+    getfileData('fileInput').then(fileData => {
+      var msgData = {
+        text: document.getElementById('msgInput').value,
+        file: fileData
+      };
+      resetForm('replyForm');
+      resolve(JSON.stringify(msgData));
+    }).catch(error => {
+      reject(error);
+    });
+  });
+}
+
+function sendDirectMsg(msgData, time, sign) {
   var data = JSON.stringify({
     from: selfID,
     to: receiverID,
     directMsg: {
       time: time,
-      msgCipher: floOpt.encryptData(msg, contacts[receiverID].pubKey),
+      msgCipher: floOpt.encryptData(msgData, contacts[receiverID].pubKey),
       sign: sign
     }
   });
@@ -1092,20 +1168,20 @@ function sendDirectMsg(msg, time, sign) {
   var msgInfo = {
     time: time,
     floID: receiverID,
-    text: msg,
+    msgData: msgData,
     type: "S"
   }
   createMsgElement(msgInfo);
   storeMsg(msgInfo);
 }
 
-function sendGroupMsg(msg, time, sign) {
+function sendGroupMsg(msgData, time, sign) {
   var data = {
     from: selfID,
     groupMsg: {
       group: receiverID,
       time: time,
-      msgCipher: floOpt.encryptData(msg, groups[receiverID].pubKey),
+      msgCipher: floOpt.encryptData(msgData, groups[receiverID].pubKey),
       sign: sign
     }
   };
@@ -1121,7 +1197,7 @@ function sendGroupMsg(msg, time, sign) {
     time: time,
     sender: selfID,
     groupID: receiverID,
-    text: msg,
+    msgData: msgData,
     type: "S"
   }
   createMsgElement(msgInfo);
@@ -1468,6 +1544,7 @@ function customCheckList(userList, ignoreList, okBtnVal = "Ok", okBtnType = "suc
   grpNameInput.style.display = (okBtnVal === "Create Group" ? "block" : "none");
   grpNameInput.value = '';
   var userChecklist = document.getElementById('userChecklist');
+  userChecklist.innerHTML = '';
   for (var i = 0; i < userList.length; i++) {
     if (ignoreList.includes(userList[i]))
       continue;
@@ -1527,5 +1604,26 @@ function searchChecklist() {
     };
   } catch (e) {
     console.log(e);
+  }
+}
+
+function downloadFile(msgID) {
+  var idb = indexedDB.open("FLO_Chat");
+  idb.onerror = (event) => {
+    console.log("Error in opening IndexedDB!");
+  };
+  idb.onsuccess = (event) => {
+    var db = event.target.result;
+    var msgReq = db.transaction('messages', "readwrite").objectStore('messages').get(msgID);
+    msgReq.onsuccess = (event) => {
+      var file = JSON.parse(event.target.result.msgData).file;
+      var tmpEl = document.createElement('a');
+      tmpEl.setAttribute('href', 'data:application/octet-stream;charset=utf-8;base64,' + file.content);
+      tmpEl.setAttribute('download', file.name);
+      tmpEl.style.display = 'none';
+      document.body.appendChild(tmpEl);
+      tmpEl.click();
+      document.body.removeChild(tmpEl);
+    }
   }
 }

@@ -105,23 +105,32 @@
 
         <!-- Reply Box -->
         <div class="row reply">
-          <!--
-          <div class="col-sm-1 col-xs-1 reply-icon">
-            <i class="fa fa-smile-o fa-2x"></i>
-          </div>
-        -->
-          <div class="col-sm-9 col-xs-9 reply-main">
-            <textarea class="form-control" rows="1" id="sendMsgInput" placeholder="Type message"
-              autocomplete="off"></textarea>
-          </div>
-          <!--
-          <div class="col-sm-1 col-xs-1 reply-icon">
-            <i class="fa fa-microphone fa-2x" aria-hidden="true"></i>
-          </div>
-        -->
-          <div class="col-sm-1 col-xs-1 reply-icon" onclick="sendMsg()">
-            <i class="fa fa-send fa-2x" aria-hidden="true"></i>
-          </div>
+          <form id="replyForm">
+
+            <!--
+            <div class="col-sm-1 col-xs-1 reply-icon">
+              <i class="fa fa-smile-o fa-2x"></i>
+            </div>
+            -->
+            <div class="col-sm-9 col-xs-9 reply-main">
+              <textarea class="form-control" rows="1" id="msgInput" placeholder="Type message"
+                autocomplete="off"></textarea>
+            </div>
+            <div class="col-sm-1 col-xs-1 reply-icon">
+              <label>
+                <i class="fa fa-file fa-2x" aria-hidden="true"></i>
+                <input class="attach-file" type="file" id="fileInput"><span></span>
+              </label>
+            </div>
+            <!--
+            <div class="col-sm-1 col-xs-1 reply-icon">
+              <i class="fa fa-microphone fa-2x" aria-hidden="true"></i>
+            </div>
+            -->
+            <div class="col-sm-1 col-xs-1 reply-icon" onclick="sendMsg()">
+              <i class="fa fa-send fa-2x" aria-hidden="true"></i>
+            </div>
+          </form>
         </div>
         <!-- Reply Box End -->
       </div>
