@@ -3,4 +3,6 @@ util/mongoose.c   linguist-vendored
 util/mongoose.h   linguist-vendored
 util/websocket_chatExample/* linguist-vendored
 
-.gitattributes  export-ignore
+.gitattributes	export-ignore
+screenshots/*	export-ignore
+util/*		export-ignore
