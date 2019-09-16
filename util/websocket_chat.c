@@ -22,23 +22,15 @@ static int is_websocket(const struct mg_connection *nc) {
 
 static void broadcast(struct mg_connection *nc, const struct mg_str msg) {
   struct mg_connection *c;
-  char buf[500];
-
-  snprintf(buf, sizeof(buf), "%.*s", (int) msg.len, msg.p);
-  printf("%s\n", buf); /* Local echo. */
   for (c = mg_next(nc->mgr, NULL); c != NULL; c = mg_next(nc->mgr, c)) {
     if (c == nc) continue; /* Don't send to the sender. */
-    mg_send_websocket_frame(c, WEBSOCKET_OP_TEXT, buf, strlen(buf));
+    mg_send_websocket_frame(c, WEBSOCKET_OP_TEXT,  msg.p, msg.len);
   }
 }
 
 static void unicast(struct mg_connection *nc,const struct mg_str msg) {
-  char buf[5000];
-
-  snprintf(buf, sizeof(buf), "%.*s", (int) msg.len, msg.p);
-  printf("%s\n", buf); /* Local echo. */
   if(nc != NULL)
-    mg_send_websocket_frame(nc, WEBSOCKET_OP_TEXT, buf, strlen(buf));
+    mg_send_websocket_frame(nc, WEBSOCKET_OP_TEXT, msg.p, msg.len);
   else
     printf("No selfClient is connected!\n");
   
@@ -115,7 +107,7 @@ int main(int argc, char** argv) {
 
   nc = mg_bind(&mgr, s_http_port, ev_handler);
   mg_set_protocol_http_websocket(nc);
-  s_http_server_opts.document_root = "app";  // Serve current directory
+  s_http_server_opts.document_root = ".";  // Serve current directory
   s_http_server_opts.enable_directory_listing = "no";
 
   printf("Started on port %s\n", s_http_port);
