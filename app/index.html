@@ -85,14 +85,18 @@
               <span id="recipient-floID">Select Contact</span>
             </span>
           </div>
-          <div class="col-sm-1 col-xs-1  heading-icon pull-right dropdown" id="groupOptions">
+          <div class="col-sm-1 col-xs-1  heading-icon pull-right dropdown">
             <i class="fa fa-ellipsis-v fa-2x  pull-right" aria-hidden="true"></i>
-            <div class="dropdown-content">
-              <li onclick="addGroupMembers()">Add Members</li>
-              <li onclick="rmGroupMembers()">Remove Members</li>
-              <li onclick="addGroupAdmins()">Add Admins</li>
-              <li onclick="rmGroupAdmins()">Remove Admins</li>
-              <li onclick="deleteGroup()">Delete Group</li>
+            <div id="groupOptions">
+              <div class="dropdown-content">
+                <li class="type2" onclick="addGroupMembers()">Add Members</li>
+                <li class="type2" onclick="rmGroupMembers()">Remove Members</li>
+                <li class="type1" onclick="addGroupAdmins()">Add Admins</li>
+                <li class="type1" onclick="rmGroupAdmins()">Remove Admins</li>
+                <li class="type2" onclick="revokeGroupKeys()">Revoke Keys</li>
+                <li class="type1" onclick="deleteGroup()">Delete Group</li>
+                <li class="type3" onclick="leaveGroup()">Leave Group</li>
+              </div>
             </div>
           </div>
         </div>

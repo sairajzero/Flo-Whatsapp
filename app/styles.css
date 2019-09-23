@@ -477,6 +477,10 @@ body {
   overflow-y: scroll;
 }
 
+.dropdown {
+  overflow: visible;
+}
+
 .dropdown-content {
   display: none;
   position: absolute;
@@ -507,6 +511,30 @@ body {
 #groupOptions {
   display: none;
   overflow: visible;
+}
+
+.grp_creator .type1,
+.grp_creator .type2,
+.grp_creator .type3 {
+  display: block;
+}
+
+.grp_admin .type1 {
+  display: none;
+}
+
+.grp_admin .type2,
+.grp_admin .type3 {
+  display: block;
+}
+
+.grp_member .type1,
+.grp_member .type2 {
+  display: block;
+}
+
+.grp_member .type3 {
+  display: block;
 }
 
 input.attach-file {

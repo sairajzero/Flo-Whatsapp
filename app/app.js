@@ -70,15 +70,9 @@ var floOpt = {
 
   deriveSharedKeySender: function (receiverCompressedPublicKey, senderPrivateKey) {
     try {
-      let receiverPublicKeyString = this.getUncompressedPublicKey(
-        receiverCompressedPublicKey);
-      var senderDerivedKey = {
-        XValue: "",
-        YValue: ""
-      };
-      senderDerivedKey = ellipticCurveEncryption.senderSharedKeyDerivation(
-        receiverPublicKeyString.x,
-        receiverPublicKeyString.y, senderPrivateKey);
+      let receiverPublicKeyString = this.getUncompressedPublicKey(receiverCompressedPublicKey);
+      var senderDerivedKey = ellipticCurveEncryption.senderSharedKeyDerivation(
+        receiverPublicKeyString.x, receiverPublicKeyString.y, senderPrivateKey);
       return senderDerivedKey;
     } catch (error) {
       return new Error(error);
@@ -107,27 +101,16 @@ var floOpt = {
 
   encryptData: function (data, receiverCompressedPublicKey) {
     var senderECKeyData = this.getSenderPublicKeyString();
-    var senderDerivedKey = {
-      XValue: "",
-      YValue: ""
-    };
-    var senderPublicKeyString = {};
-    senderDerivedKey = this.deriveSharedKeySender(
-      receiverCompressedPublicKey, senderECKeyData.privateKey);
-    console.log("senderDerivedKey", senderDerivedKey);
+    var senderDerivedKey = this.deriveSharedKeySender(receiverCompressedPublicKey, senderECKeyData.privateKey);
     let senderKey = senderDerivedKey.XValue + senderDerivedKey.YValue;
     let secret = Crypto.AES.encrypt(data, senderKey);
     return {
       secret: secret,
-      pubVal: senderECKeyData.senderPublicKeyString
+      senderPublicKeyString: senderECKeyData.senderPublicKeyString
     };
   },
 
-  decryptData: function (secret, senderPublicKeyString, myPrivateKey) {
-    var receiverDerivedKey = {
-      XValue: "",
-      YValue: ""
-    };
+  decryptData: function (data, myPrivateKey) {
     var receiverECKeyData = {};
     if (typeof myPrivateKey !== "string") throw new Error("No private key found.");
 
@@ -136,12 +119,11 @@ var floOpt = {
       "Failed to detremine your private key.");
     receiverECKeyData.privateKey = privateKey.privateKeyDecimal;
 
-    receiverDerivedKey = this.deriveReceiverSharedKey(senderPublicKeyString,
-      receiverECKeyData.privateKey);
+    var receiverDerivedKey = this.deriveReceiverSharedKey(data.senderPublicKeyString, receiverECKeyData.privateKey);
     console.log("receiverDerivedKey", receiverDerivedKey);
 
     let receiverKey = receiverDerivedKey.XValue + receiverDerivedKey.YValue;
-    let decryptMsg = Crypto.AES.decrypt(secret, receiverKey);
+    let decryptMsg = Crypto.AES.decrypt(data.secret, receiverKey);
     return decryptMsg;
   },
 
@@ -156,7 +138,7 @@ var floOpt = {
     var pubkeyHex = key.getPubKeyHex();
     return pubkeyHex;
   },
-  getFLOIDfromPubkeyHex: function (pubkeyHex) {
+  getFloIDfromPubkeyHex: function (pubkeyHex) {
     var key = new Bitcoin.ECKey().setPub(pubkeyHex);
     var floID = key.getBitcoinAddress();
     return floID;
@@ -215,13 +197,27 @@ var floOpt = {
       console.log(e);
     }
   },
-  verifyPrivKey: function (privateKeyHex, floID) {
+  verifyPrivKey_floID: function (privateKeyHex, floID) {
     try {
       var key = new Bitcoin.ECKey(privateKeyHex);
       if (key.priv == null)
         return false;
       key.setCompressed(true);
       if (floID == key.getBitcoinAddress())
+        return true;
+      else
+        return false;
+    } catch (e) {
+      console.log(e);
+    }
+  },
+  verifyPrivKey_pubKey: function (privateKeyHex, pubKey) {
+    try {
+      var key = new Bitcoin.ECKey(privateKeyHex);
+      if (key.priv == null)
+        return false;
+      key.setCompressed(true);
+      if (pubKey == key.getPubKeyHex())
         return true;
       else
         return false;
@@ -489,6 +485,7 @@ function getDatafromAPI() {
       objectStore4.createIndex('groupInfo', 'groupInfo', {
         unique: false
       });
+      var objectStore5 = db.createObjectStore("groupPrivKey");
     };
     idb.onsuccess = (event) => {
       var db = event.target.result;
@@ -526,7 +523,7 @@ function getDatafromAPI() {
               } else {
                 var data = JSON.parse(tx.floData).FLO_chat;
                 if (data !== undefined) {
-                  if (floOpt.getFLOIDfromPubkeyHex(data.pubKey) != tx.vin[0].addr)
+                  if (floOpt.getFloIDfromPubkeyHex(data.pubKey) != tx.vin[0].addr)
                     throw ("PublicKey doesnot match with floID")
                   data = {
                     floID: tx.vin[0].addr,
@@ -762,7 +759,7 @@ function displayContacts() {
                     <span class="time-meta">@${floID}</span>
                   </div>
                 </div>
-              </div>`
+              </div>`;
     createLi.querySelector("span.name-meta").textContent = contacts[floID].name;
     listElement.appendChild(createLi);
   }
@@ -828,7 +825,7 @@ function initselfWebSocket() {
 
 function processIncomingData(data) {
   if (data.directMsg !== undefined) {
-    var msgData = floOpt.decryptData(data.directMsg.msgCipher.secret, data.directMsg.msgCipher.pubVal, privKey)
+    var msgData = floOpt.decryptData(data.directMsg.msgCipher, privKey)
     if (!floOpt.verifyData(msgData, data.directMsg.sign, contacts[data.from].pubKey))
       return
     var msgInfo = {
@@ -842,7 +839,7 @@ function processIncomingData(data) {
   } else if (data.groupMsg !== undefined && data.groupMsg.group in groups) {
     if (!(groups[data.groupMsg.group].members.includes(data.from)))
       return
-    var msgData = floOpt.decryptData(data.groupMsg.msgCipher.secret, data.groupMsg.msgCipher.pubVal, groups[data.groupMsg.group].privKey);
+    var msgData = floOpt.decryptData(data.groupMsg.msgCipher, groups[data.groupMsg.group].privKey);
     if (!floOpt.verifyData(msgData, data.groupMsg.sign, contacts[data.from].pubKey))
       return
     var msgInfo = {
@@ -855,9 +852,9 @@ function processIncomingData(data) {
     createMsgElement(msgInfo);
     storeMsg(msgInfo)
   } else if (data.newGroup !== undefined) {
-    var groupInfoStr = floOpt.decryptData(data.newGroup.groupInfo.secret, data.newGroup.groupInfo.pubVal, privKey)
+    var groupInfoStr = floOpt.decryptData(data.newGroup.groupInfo, privKey)
     var groupInfo = JSON.parse(groupInfoStr);
-    if (floOpt.verifyData(groupInfoStr, data.newGroup.sign, contacts[groupInfo.creator].pubKey) && floOpt.verifyPrivKey(groupInfo.privKey, groupInfo.floID)) {
+    if (floOpt.verifyData(groupInfoStr, data.newGroup.sign, contacts[data.from].pubKey) && floOpt.verifyPrivKey_pubKey(groupInfo.privKey, groupInfo.pubKey)) {
       groups[groupInfo.floID] = groupInfo;
       searchIndex.add(groupInfo.floID, groupInfo.name + ' #' + groupInfo.floID);
       storeGroup(groupInfoStr, groupInfo.floID);
@@ -866,11 +863,8 @@ function processIncomingData(data) {
   } else if (data.deleteGroup !== undefined && data.deleteGroup.group in groups) {
     if (data.from != groups[data.deleteGroup.group].creator && !groups[data.deleteGroup.group].admins.includes(data.from))
       return
-    if (floOpt.verifyData('deleteGroup:' + data.deleteGroup.group, data.deleteGroup.sign, contacts[data.from].pubKey)) {
-      delete groups[data.deleteGroup.group];
-      searchIndex.remove(data.deleteGroup.group);
-      deleteGroupFromIDB(data.deleteGroup.group);
-    }
+    if (floOpt.verifyData('deleteGroup:' + data.deleteGroup.group, data.deleteGroup.sign, contacts[data.from].pubKey))
+      deleteGroupFromLocal(data.deleteGroup.group);
   } else if (data.addGroupMembers !== undefined && data.addGroupMembers.group in groups) {
     if (data.from != groups[data.addGroupMembers.group].creator && !groups[data.addGroupMembers.group].admins.includes(data.from))
       return
@@ -881,9 +875,15 @@ function processIncomingData(data) {
     }
   } else if (data.rmGroupMembers !== undefined && data.rmGroupMembers.group in groups) {
     if (data.from != groups[data.rmGroupMembers.group].creator && !groups[data.rmGroupMembers.group].admins.includes(data.from))
-      return
-    if (floOpt.verifyData('rmGroupMembers:' + data.rmGroupMembers.group + data.rmGroupMembers.members.join('|'), data.rmGroupMembers.sign, contacts[data.from].pubKey)) {
+      return;
+    if (data.rmGroupMembers.members.includes(groups[data.rmGroupMembers.group].creator) || data.rmGroupMembers.members.includes(data.from) || data.rmGroupMembers.members.includes(selfID))
+      return;
+    var newPrivKey = floOpt.decryptData(data.rmGroupMembers.newPrivKey, privKey);
+    if (floOpt.verifyData('rmGroupMembers:' + data.rmGroupMembers.group + newPrivKey + data.rmGroupMembers.members.join('|'), data.rmGroupMembers.sign, contacts[data.from].pubKey)) {
       groups[data.rmGroupMembers.group].members = groups[data.rmGroupMembers.group].members.filter(x => !data.rmGroupMembers.members.includes(x)); //remove member from group
+      groups[data.rmGroupMembers.group].admins = groups[data.rmGroupMembers.group].admins.filter(x => !data.rmGroupMembers.members.includes(x));
+      groups[data.rmGroupMembers.group].privKey = newPrivKey;
+      groups[data.rmGroupMembers.group].pubKey = floOpt.getPubKeyHex(newPrivKey);
       var groupInfoStr = JSON.stringify(groups[data.rmGroupMembers.group]);
       storeGroup(groupInfoStr, data.rmGroupMembers.group);
     }
@@ -902,6 +902,27 @@ function processIncomingData(data) {
       groups[data.rmGroupAdmins.group].admins = groups[data.rmGroupAdmins.group].admins.filter(x => !data.rmGroupAdmins.admins.includes(x)); //remove member from group
       var groupInfoStr = JSON.stringify(groups[data.rmGroupAdmins.group]);
       storeGroup(groupInfoStr, data.rmGroupAdmins.group);
+    }
+  } else if (data.leaveGroup !== undefined && data.leaveGroup.group in groups) {
+    if (floOpt.verifyData('leaveGroup:' + data.leaveGroup.group, data.leaveGroup.sign, contacts[data.from].pubKey)) {
+      groups[data.leaveGroup.group].members = groups[data.leaveGroup.group].members.filter(x => x != data.from); //remove member from group
+      groups[data.leaveGroup.group].admins = groups[data.leaveGroup.group].admins.filter(x => x != data.from);
+      var groupInfoStr = JSON.stringify(groups[data.leaveGroup.group]);
+      storeGroup(groupInfoStr, data.leaveGroup.group);
+      if (groups[data.leaveGroup.group].creator == selfID || groups[data.leaveGroup.group].admins.includes(selfID))
+        revokeGroupKeys(data.leaveGroup.group);
+    }
+  } else if (data.revokeGroupKeys !== undefined && data.revokeGroupKeys.group in groups) {
+    if (data.from != groups[data.revokeGroupKeys.group].creator && !groups[data.revokeGroupKeys.group].admins.includes(data.from))
+      return;
+    var newPrivKey = floOpt.decryptData(data.revokeGroupKeys.newPrivKey, privKey);
+    if (floOpt.verifyData('revokeGroupKeys:' + data.revokeGroupKeys.group + newPrivKey, data.revokeGroupKeys.sign, contacts[data.from].pubKey)) {
+      console.log("revoking old : ",groups[data.revokeGroupKeys.group].privKey)
+      groups[data.revokeGroupKeys.group].privKey = newPrivKey;
+      groups[data.revokeGroupKeys.group].pubKey = floOpt.getPubKeyHex(newPrivKey);
+      var groupInfoStr = JSON.stringify(groups[data.revokeGroupKeys.group]);
+      storeGroup(groupInfoStr, data.revokeGroupKeys.group);
+      console.log("revoked new : ",groups[data.revokeGroupKeys.group].privKey)
     }
   }
 }
@@ -1001,16 +1022,14 @@ function checkStatusInterval() {
 function changeReceiver(param) {
   if (receiverID !== undefined)
     document.getElementById(receiverID).style.display = 'none';
-  //console.log(param.getAttribute("name"));
   receiverID = param.getAttribute("name");
   document.getElementById('recipient-floID').textContent = receiverID;
   receiverStatus(false)
   document.getElementById(receiverID).style.display = 'block';
-  document.getElementById("groupOptions").style.display = 'none';
 
   if (receiverID in contacts) {
     msgType = 'direct';
-
+    document.getElementById("groupOptions").style.display = 'none';
     try {
       if (receiverWebSocket !== undefined && receiverWebSocket.readyState === WebSocket.OPEN)
         receiverWebSocket.close()
@@ -1041,21 +1060,14 @@ function changeReceiver(param) {
     if (receiverWebSocket !== undefined && receiverWebSocket.readyState === WebSocket.OPEN)
       receiverWebSocket.close()
     receiverWebSocket = undefined;
-    if (selfID == groups[receiverID].creator) {
-      var grpOpt = document.getElementById("groupOptions");
-      grpOpt.style.display = 'block';
-      var optList = grpOpt.querySelectorAll('li');
-      for (var i = 0; i < optList.length; i++)
-        optList[i].style.display = 'block';
-    } else if (groups[receiverID].admins.includes(selfID)) {
-      var grpOpt = document.getElementById("groupOptions");
-      grpOpt.style.display = 'block';
-      var optList = grpOpt.querySelectorAll('li');
-      for (var i = 0; i < 2; i++)
-        optList[i].style.display = 'block';
-      for (var i = 2; i < optList.length; i++)
-        optList[i].style.display = 'none';
-    }
+    var grpOpt = document.getElementById("groupOptions");
+    grpOpt.style.display = "block";
+    if (selfID == groups[receiverID].creator)
+      grpOpt.setAttribute("class", "grp_creator");
+    else if (groups[receiverID].admins.includes(selfID))
+      grpOpt.setAttribute("class", "grp_admin");
+    else
+      grpOpt.setAttribute("class", "grp_member");
   }
 }
 
@@ -1080,13 +1092,13 @@ function getTime(time) {
   return tmp;
 }
 
-function getFileSize(size){
-  var filesizeUnits = ['B','kB','MB','GB','TB'];
-  for(var i = 0;i<filesizeUnits.length;i++){
-    if(size/1024 < 1)
-      return `${Number((size).toFixed(1))}${filesizeUnits[i]}`; 
+function getFileSize(size) {
+  var filesizeUnits = ['B', 'kB', 'MB', 'GB', 'TB'];
+  for (var i = 0; i < filesizeUnits.length; i++) {
+    if (size / 1024 < 1)
+      return `${Number((size).toFixed(1))}${filesizeUnits[i]}`;
     else
-      size = size/1024;
+      size = size / 1024;
   }
 }
 
@@ -1100,9 +1112,9 @@ function sendMsg() {
     var time = Date.now();
     var sign = floOpt.signData(msgData, privKey);
     if (msgType === 'direct')
-      sendDirectMsg(msgData, time, sign);
+      sendDirectMsg(msgData, receiverID, time, sign);
     else if (msgType === 'group')
-      sendGroupMsg(msgData, time, sign);
+      sendGroupMsg(msgData, receiverID, time, sign);
   }).catch(error => {
     console.log(error);
   })
@@ -1150,24 +1162,24 @@ function getReplyInputs() {
   });
 }
 
-function sendDirectMsg(msgData, time, sign) {
+function sendDirectMsg(msgData, floID, time, sign) {
   var data = JSON.stringify({
     from: selfID,
-    to: receiverID,
+    to: floID,
     directMsg: {
       time: time,
-      msgCipher: floOpt.encryptData(msgData, contacts[receiverID].pubKey),
+      msgCipher: floOpt.encryptData(msgData, contacts[floID].pubKey),
       sign: sign
     }
   });
   if (recStat)
     receiverWebSocket.send(data);
   else
-    sendDataToSuperNode(receiverID, data);
+    sendDataToSuperNode(floID, data);
 
   var msgInfo = {
     time: time,
-    floID: receiverID,
+    floID: floID,
     msgData: msgData,
     type: "S"
   }
@@ -1175,19 +1187,19 @@ function sendDirectMsg(msgData, time, sign) {
   storeMsg(msgInfo);
 }
 
-function sendGroupMsg(msgData, time, sign) {
+function sendGroupMsg(msgData, groupID, time, sign) {
   var data = {
     from: selfID,
     groupMsg: {
-      group: receiverID,
+      group: groupID,
       time: time,
-      msgCipher: floOpt.encryptData(msgData, groups[receiverID].pubKey),
+      msgCipher: floOpt.encryptData(msgData, groups[groupID].pubKey),
       sign: sign
     }
   };
   console.log(data);
 
-  groups[receiverID].members.forEach(floID => {
+  groups[groupID].members.forEach(floID => {
     if (floID == selfID) //dont send to self
       return;
     data.to = floID;
@@ -1196,7 +1208,7 @@ function sendGroupMsg(msgData, time, sign) {
   var msgInfo = {
     time: time,
     sender: selfID,
-    groupID: receiverID,
+    groupID: groupID,
     msgData: msgData,
     type: "S"
   }
@@ -1335,7 +1347,9 @@ function storeGroup(groupInfoStr, groupID) {
   };
 }
 
-function deleteGroupFromIDB(groupID) {
+function deleteGroupFromLocal(groupID) {
+  delete groups[groupID];
+  searchIndex.remove(groupID);
   var idb = indexedDB.open("FLO_Chat");
   idb.onerror = (event) => {
     console.log("Error in opening IndexedDB!");
@@ -1349,9 +1363,25 @@ function deleteGroupFromIDB(groupID) {
   };
 }
 
+function storeGroupCreatorKey(groupID, encryptedPrivKey) {
+  var idb = indexedDB.open("FLO_Chat");
+  idb.onerror = (event) => {
+    console.log("Error in opening IndexedDB!");
+  };
+  idb.onsuccess = (event) => {
+    var db = event.target.result;
+    var obs = db.transaction('groupPrivKey', "readwrite").objectStore('groupPrivKey');
+    obs.put(JSON.stringify(encryptedPrivKey), groupID);
+    db.close();
+  };
+}
+
 function createGroup() {
   customCheckList(Object.keys(contacts), [selfID], 'Create Group', 'success').then(result => {
+    var groupCreatorKey = floOpt.genNewIDpair();
+    storeGroupCreatorKey(groupCreatorKey.floID, floOpt.encryptData(groupCreatorKey.privKey,contacts[selfID].pubKey))
     var grpInfo = floOpt.genNewIDpair();
+    grpInfo.floID = groupCreatorKey.floID;
     grpInfo.name = result.grpName;
     grpInfo.members = result.members;
     grpInfo.members.push(selfID)
@@ -1375,43 +1405,77 @@ function createGroup() {
   })
 }
 
-function deleteGroup() {
+function deleteGroup(groupID = receiverID) {
   var flag = confirm("Are you sure you want to delete this group?");
   if (flag) {
     var data = {
       from: selfID,
       deleteGroup: {
-        group: receiverID,
-        sign: floOpt.signData('deleteGroup:' + receiverID, privKey)
+        group: groupID,
+        sign: floOpt.signData('deleteGroup:' + groupID, privKey)
       }
     };
-    groups[receiverID].members.forEach(floID => {
+    groups[groupID].members.forEach(floID => {
       data.to = floID;
       sendData(floID, JSON.stringify(data));
     });
   }
 }
 
-function addGroupMembers() {
-  customCheckList(Object.keys(contacts), groups[receiverID].members, 'Add Members', 'success').then(result => {
+function revokeGroupKeys(groupID = receiverID) {
+  var newPrivKey = floOpt.genNewIDpair().privKey;
+  var data = {
+    from: selfID,
+    revokeGroupKeys: {
+      group: groupID,
+      sign: floOpt.signData('revokeGroupKeys:' + groupID + newPrivKey, privKey)
+    }
+  }
+  groups[groupID].members.forEach(floID => {
+    data.to = floID;
+    data.revokeGroupKeys.newPrivKey = floOpt.encryptData(newPrivKey, contacts[floID].pubKey)
+    sendData(floID, JSON.stringify(data));
+  });
+}
+
+function leaveGroup(groupID = receiverID) {
+  var flag = confirm("Are you sure you want to leave this group?");
+  if (flag) {
+    var data = {
+      from: selfID,
+      leaveGroup: {
+        group: groupID,
+        sign: floOpt.signData('leaveGroup:' + groupID, privKey)
+      }
+    };
+    groups[groupID].members.forEach(floID => {
+      if (floID == selfID) //dont send to self
+        return;
+      data.to = floID;
+      sendData(floID, JSON.stringify(data));
+    });
+    deleteGroupFromLocal(groupID);
+  }
+}
+
+function addGroupMembers(groupID = receiverID) {
+  customCheckList(Object.keys(contacts), groups[groupID].members, 'Add Members', 'success').then(result => {
     var newMembers = result.members;
     var data1 = {
       from: selfID,
       addGroupMembers: {
-        group: receiverID,
+        group: groupID,
         members: newMembers,
-        sign: floOpt.signData('addGroupMembers:' + receiverID + newMembers.join('|'), privKey)
+        sign: floOpt.signData('addGroupMembers:' + groupID + newMembers.join('|'), privKey)
       }
     }
-    groups[receiverID].members.forEach(floID => {
-      if (floID == selfID) //dont send to self
-        return;
+    groups[groupID].members.forEach(floID => {
       data1.to = floID;
       sendData(floID, JSON.stringify(data1));
     });
-    groups[receiverID].members = groups[receiverID].members.concat(newMembers);
-    var grpInfoStr = JSON.stringify(groups[receiverID]);
-    console.log(grpInfoStr);
+    var grpInfo = groups[groupID];
+    grpInfo.members = grpInfo.members.concat(newMembers);
+    var grpInfoStr = JSON.stringify(grpInfo);
     var data2 = {
       from: selfID,
       newGroup: {
@@ -1423,92 +1487,79 @@ function addGroupMembers() {
       data2.newGroup.groupInfo = floOpt.encryptData(grpInfoStr, contacts[floID].pubKey),
         sendData(floID, JSON.stringify(data2));
     });
-    storeGroup(grpInfoStr, receiverID);
   }).catch(error => {
     console.log(error);
   })
 }
 
-function rmGroupMembers() {
-  customCheckList(groups[receiverID].members, [], 'Remove Members', 'danger').then(result => {
-    var rmMembers = result.members;
+function rmGroupMembers(groupID = receiverID) {
+  customCheckList(groups[groupID].members, [groups[groupID].creator, selfID], 'Remove Members', 'danger').then(result => {
+    var newPrivKey = floOpt.genNewIDpair().privKey;
     var data1 = {
       from: selfID,
       rmGroupMembers: {
-        group: receiverID,
-        members: rmMembers,
-        sign: floOpt.signData('rmGroupMembers:' + receiverID + rmMembers.join('|'), privKey)
+        group: groupID,
+        members: result.members,
+        sign: floOpt.signData('rmGroupMembers:' + groupID + newPrivKey + result.members.join('|'), privKey)
       }
     }
-    groups[receiverID].members = groups[receiverID].members.filter(x => !rmMembers.includes(x)); //remove member from group
-    storeGroup(JSON.stringify(groups[receiverID]), receiverID);
-    groups[receiverID].members.forEach(floID => {
-      if (floID == selfID)
-        return;
-      data1.to = floID;
-      sendData(floID, JSON.stringify(data1));
-    });
     var data2 = {
       from: selfID,
       deleteGroup: {
-        group: receiverID,
-        sign: floOpt.signData('deleteGroup:' + receiverID, privKey)
+        group: groupID,
+        sign: floOpt.signData('deleteGroup:' + groupID, privKey)
       }
     };
-    rmMembers.forEach(floID => {
-      data2.to = floID;
-      sendData(floID, JSON.stringify(data2));
+    groups[groupID].members.forEach(floID => {
+      if (result.members.includes(floID)) {
+        data2.to = floID;
+        sendData(floID, JSON.stringify(data2));
+      } else {
+        data1.to = floID;
+        data1.rmGroupMembers.newPrivKey = floOpt.encryptData(newPrivKey, contacts[floID].pubKey)
+        sendData(floID, JSON.stringify(data1));
+      }
     });
   }).catch(error => {
     console.log(error);
   })
 }
 
-function addGroupAdmins() {
-  customCheckList(groups[receiverID].members, groups[receiverID].admins, 'Add Admins', 'success').then(result => {
+function addGroupAdmins(groupID = receiverID) {
+  customCheckList(groups[groupID].members, groups[groupID].admins, 'Add Admins', 'success').then(result => {
     var newAdmins = result.members;
     var data = {
       from: selfID,
       addGroupAdmins: {
-        group: receiverID,
+        group: groupID,
         admins: newAdmins,
-        sign: floOpt.signData('addGroupAdmins:' + receiverID + newAdmins.join('|'), privKey)
+        sign: floOpt.signData('addGroupAdmins:' + groupID + newAdmins.join('|'), privKey)
       }
     }
-    groups[receiverID].members.forEach(floID => {
-      if (floID == selfID) //dont send to self
-        return;
+    groups[groupID].members.forEach(floID => {
       data.to = floID;
       sendData(floID, JSON.stringify(data));
     });
-    groups[receiverID].admins = groups[receiverID].admins.concat(newAdmins);
-    var grpInfoStr = JSON.stringify(groups[receiverID]);
-    storeGroup(grpInfoStr, receiverID);
   }).catch(error => {
     console.log(error);
   })
 }
 
-function rmGroupAdmins() {
-  customCheckList(groups[receiverID].admins, [], 'Remove Admins', 'danger').then(result => {
+function rmGroupAdmins(groupID = receiverID) {
+  customCheckList(groups[groupID].admins, [], 'Remove Admins', 'danger').then(result => {
     var rmAdmins = result.members;
     var data = {
       from: selfID,
       rmGroupAdmins: {
-        group: receiverID,
+        group: groupID,
         admins: rmAdmins,
-        sign: floOpt.signData('rmGroupAdmins:' + receiverID + rmAdmins.join('|'), privKey)
+        sign: floOpt.signData('rmGroupAdmins:' + groupID + rmAdmins.join('|'), privKey)
       }
     }
-    groups[receiverID].members.forEach(floID => {
-      if (floID == selfID) //dont send to self
-        return;
+    groups[groupID].members.forEach(floID => {
       data.to = floID;
       sendData(floID, JSON.stringify(data));
     });
-    groups[receiverID].admins = groups[receiverID].admins.filter(x => !rmAdmins.includes(x)); //remove admins
-    var grpInfoStr = JSON.stringify(groups[receiverID]);
-    storeGroup(grpInfoStr, receiverID);
   }).catch(error => {
     console.log(error);
   })
